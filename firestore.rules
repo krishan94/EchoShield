@@ -60,6 +60,15 @@ service cloud.firestore {
     match /voice_profiles/{userId} {
       allow read, create, update, delete: if isAuthenticated() && request.auth.uid == userId;
     }
+
+    // Verification History collection:
+    // - Forensic audit trail of voice verification events (no raw audio or biometric embeddings)
+    // - Only the verifier can read and clear their own audit log
+    match /verification_history/{historyId} {
+      allow read, delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow update: if false; // History records are immutable audit logs
+    }
   }
 }
 

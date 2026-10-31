@@ -51,10 +51,14 @@ import com.echoshield.domain.model.CallType
 import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.IconButton
+
 @Composable
 fun CallHistoryScreen(
     onOpenDrawer: () -> Unit,
-    onViewReportDetails: (String) -> Unit
+    onViewReportDetails: (String) -> Unit,
+    onViewVerificationAudit: (() -> Unit)? = null
 ) {
     val allCalls = PreviewData.callRecords
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -82,7 +86,18 @@ fun CallHistoryScreen(
         EchoTopAppBar(
             title = "Call Verification History",
             subtitle = "Audit Trail & Threat Log",
-            onOpenDrawer = onOpenDrawer
+            onOpenDrawer = onOpenDrawer,
+            actions = {
+                if (onViewVerificationAudit != null) {
+                    IconButton(onClick = onViewVerificationAudit) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = "Voice Verification Audit Log",
+                            tint = PrimaryTeal
+                        )
+                    }
+                }
+            }
         )
 
         // Search Bar

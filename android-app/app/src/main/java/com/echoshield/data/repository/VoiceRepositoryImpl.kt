@@ -67,5 +67,42 @@ class VoiceRepositoryImpl(
             Result.failure(e)
         }
     }
+
+    override suspend fun verifyVoiceSample(
+        memberId: String,
+        audioFile: File
+    ): Result<com.echoshield.domain.model.VoiceVerificationResult> {
+        return try {
+            val result = remoteDataSource.verifyVoice(memberId, audioFile)
+            Result.success(result)
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            // Secure cleanup: purge temporary recording from local device storage
+            try {
+                if (audioFile.exists()) {
+                    audioFile.delete()
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    override suspend fun getVerificationHistory(): Result<List<com.echoshield.domain.model.VerificationHistoryRecord>> {
+        return try {
+            val history = remoteDataSource.getVerificationHistory()
+            Result.success(history)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun clearVerificationHistory(): Result<Int> {
+        return try {
+            val deletedCount = remoteDataSource.clearVerificationHistory()
+            Result.success(deletedCount)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 

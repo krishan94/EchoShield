@@ -104,6 +104,39 @@ class FakeVoiceRepository : VoiceRepository {
         _isConsentGranted.value = false
         return Result.success(Unit)
     }
+
+    override suspend fun verifyVoiceSample(
+        memberId: String,
+        audioFile: File
+    ): Result<com.echoshield.domain.model.VoiceVerificationResult> {
+        if (shouldFailNetwork) return Result.failure(Exception("Network unreachable"))
+        val result = com.echoshield.domain.model.VoiceVerificationResult(
+            verificationId = "verif_test_123",
+            memberId = memberId,
+            memberName = "Test Member",
+            result = com.echoshield.domain.model.VerificationOutcome.VOICE_MATCHED,
+            similarityScore = 0.88f,
+            matchThreshold = 0.72f,
+            nonMatchThreshold = 0.58f,
+            decisionStatus = "high_match",
+            audioQualityStatus = "acceptable",
+            modelName = "SpeechBrain ECAPA-TDNN",
+            modelVersion = "voxceleb-v1.1",
+            explanation = "Sample matches enrolled profile.",
+            verifiedAt = "2026-11-01T00:00:00Z"
+        )
+        return Result.success(result)
+    }
+
+    override suspend fun getVerificationHistory(): Result<List<com.echoshield.domain.model.VerificationHistoryRecord>> {
+        if (shouldFailNetwork) return Result.failure(Exception("Network unreachable"))
+        return Result.success(emptyList())
+    }
+
+    override suspend fun clearVerificationHistory(): Result<Int> {
+        if (shouldFailNetwork) return Result.failure(Exception("Network unreachable"))
+        return Result.success(0)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

@@ -27,6 +27,10 @@ interface VoiceRemoteDataSource {
     suspend fun enrollVoice(samples: List<File>): VoiceEnrollmentResult
     suspend fun getVoiceProfile(): VoiceProfileInfo
     suspend fun deleteVoiceProfile(): Unit
+
+    suspend fun verifyVoice(memberId: String, audioFile: File): com.echoshield.domain.model.VoiceVerificationResult
+    suspend fun getVerificationHistory(): List<com.echoshield.domain.model.VerificationHistoryRecord>
+    suspend fun clearVerificationHistory(): Int
 }
 
 /**
@@ -342,6 +346,178 @@ class VoiceRemoteDataSourceImpl(
                 "voice_enrolled_at" to null
             )
         ).await()
+    }
+
+    override suspend fun verifyVoice(
+        memberId: String,
+        audioFile: File
+    ): com.echoshield.domain.model.VoiceVerificationResult = withContext(Dispatchers.IO) {
+        val token = getAuthHeader()
+            ?: throw IllegalStateException("User authentication required for voice verification.")
+
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("member_id", memberId)
+            .addFormDataPart(
+                "audio_file",
+                audioFile.name,
+                audioFile.asRequestBody(wavMediaType)
+            )
+            .build()
+
+        val request = Request.Builder()
+            .url("$baseUrl/api/v1/voice/verify")
+            .addHeader("Authorization", "Bearer $token")
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            val bodyString = response.body?.string() ?: "{}"
+            if (!response.isSuccessful) {
+                val err = parseErrorDetail(bodyString)
+                throw IOException(err)
+            }
+
+            val json = JSONObject(bodyString)
+            val score = if (json.isNull("similarity_score")) null else json.getDouble("similarity_score").toFloat()
+
+            return@withContext com.echoshield.domain.model.VoiceVerificationResult(
+                verificationId = json.getString("verification_id"),
+                memberId = json.getString("member_id"),
+                memberName = json.optString("member_name", "Family Member"),
+                result = com.echoshield.domain.model.VerificationOutcome.fromString(json.getString("result")),
+                similarityScore = score,
+                matchThreshold = json.optDouble("match_threshold", 0.72).toFloat(),
+                nonMatchThreshold = json.optDouble("non_match_threshold", 0.58).toFloat(),
+                decisionStatus = json.optString("decision_status", "evaluated"),
+                audioQualityStatus = json.optString("audio_quality_status", "acceptable"),
+                modelName = json.optString("model_name", "SpeechBrain ECAPA-TDNN"),
+                modelVersion = json.optString("model_version", "voxceleb-v1.1"),
+                explanation = json.optString("explanation", ""),
+                verifiedAt = json.optString("verified_at", "")
+            )
+        }
+    }
+
+    override suspend fun getVerificationHistory(): List<com.echoshield.domain.model.VerificationHistoryRecord> = withContext(Dispatchers.IO) {
+        val token = getAuthHeader()
+        if (token != null) {
+            try {
+                val request = Request.Builder()
+                    .url("$baseUrl/api/v1/voice/verification-history")
+                    .addHeader("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bodyString = response.body?.string() ?: "{}"
+                        val root = JSONObject(bodyString)
+                        val array = root.optJSONArray("records") ?: org.json.JSONArray()
+                        val list = mutableListOf<com.echoshield.domain.model.VerificationHistoryRecord>()
+                        for (i in 0 until array.length()) {
+                            val item = array.getJSONObject(i)
+                            val score = if (item.isNull("similarity_score")) null else item.getDouble("similarity_score").toFloat()
+                            list.add(
+                                com.echoshield.domain.model.VerificationHistoryRecord(
+                                    id = item.getString("id"),
+                                    userId = item.getString("user_id"),
+                                    memberId = item.getString("member_id"),
+                                    memberName = item.optString("member_name", "Family Member"),
+                                    result = com.echoshield.domain.model.VerificationOutcome.fromString(item.getString("result")),
+                                    similarityScore = score,
+                                    confidenceBand = item.optString("confidence_band", ""),
+                                    audioQualityStatus = item.optString("audio_quality_status", "acceptable"),
+                                    durationSeconds = item.optDouble("duration_seconds", 0.0).toFloat(),
+                                    snrDb = item.optDouble("snr_db", 0.0).toFloat(),
+                                    modelName = item.optString("model_name", "SpeechBrain ECAPA-TDNN"),
+                                    modelVersion = item.optString("model_version", "voxceleb-v1.1"),
+                                    verifiedAt = item.optString("verified_at", "")
+                                )
+                            )
+                        }
+                        return@withContext list
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Backend history fetch error, falling back to Firestore: ${e.message}")
+            }
+        }
+
+        // Firestore fallback
+        val currentUser = FirebaseAuth.getInstance().currentUser ?: return@withContext emptyList()
+        try {
+            val snapshot = firestore.collection("verification_history")
+                .whereEqualTo("user_id", currentUser.uid)
+                .get()
+                .await()
+
+            return@withContext snapshot.documents.mapNotNull { doc ->
+                val score = doc.getDouble("similarity_score")?.toFloat()
+                com.echoshield.domain.model.VerificationHistoryRecord(
+                    id = doc.getString("id") ?: doc.id,
+                    userId = doc.getString("user_id") ?: currentUser.uid,
+                    memberId = doc.getString("member_id") ?: "",
+                    memberName = doc.getString("member_name") ?: "Family Member",
+                    result = com.echoshield.domain.model.VerificationOutcome.fromString(doc.getString("result") ?: "INCONCLUSIVE"),
+                    similarityScore = score,
+                    confidenceBand = doc.getString("confidence_band") ?: "",
+                    audioQualityStatus = doc.getString("audio_quality_status") ?: "acceptable",
+                    durationSeconds = doc.getDouble("duration_seconds")?.toFloat() ?: 0.0f,
+                    snrDb = doc.getDouble("snr_db")?.toFloat() ?: 0.0f,
+                    modelName = doc.getString("model_name") ?: "SpeechBrain ECAPA-TDNN",
+                    modelVersion = doc.getString("model_version") ?: "voxceleb-v1.1",
+                    verifiedAt = doc.getString("verified_at") ?: ""
+                )
+            }.sortedByDescending { it.verifiedAt }
+        } catch (e: Exception) {
+            Log.w(TAG, "Firestore history fallback error: ${e.message}")
+            return@withContext emptyList()
+        }
+    }
+
+    override suspend fun clearVerificationHistory(): Int = withContext(Dispatchers.IO) {
+        val token = getAuthHeader()
+        if (token != null) {
+            try {
+                val request = Request.Builder()
+                    .url("$baseUrl/api/v1/voice/verification-history")
+                    .addHeader("Authorization", "Bearer $token")
+                    .delete()
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: "{}"
+                        val json = JSONObject(body)
+                        return@withContext json.optInt("deleted_count", 0)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Backend clear history failed, falling back to Firestore: ${e.message}")
+            }
+        }
+
+        // Firestore fallback
+        val currentUser = FirebaseAuth.getInstance().currentUser ?: return@withContext 0
+        try {
+            val snapshot = firestore.collection("verification_history")
+                .whereEqualTo("user_id", currentUser.uid)
+                .get()
+                .await()
+
+            var count = 0
+            val batch = firestore.batch()
+            for (doc in snapshot.documents) {
+                batch.delete(doc.reference)
+                count++
+            }
+            batch.commit().await()
+            return@withContext count
+        } catch (e: Exception) {
+            Log.w(TAG, "Firestore clear history error: ${e.message}")
+            return@withContext 0
+        }
     }
 
     private fun parseErrorDetail(body: String?): String {

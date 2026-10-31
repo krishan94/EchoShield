@@ -31,6 +31,10 @@ sealed class Screen(val route: String) {
     data object VoiceProfileStatus : Screen("voice_profile_status")
 
     // Calling & Real-Time Verification
+    data object VoiceVerification : Screen("voice_verification?memberId={memberId}") {
+        fun createRoute(memberId: String? = null) = if (memberId != null) "voice_verification?memberId=$memberId" else "voice_verification"
+    }
+    data object VerificationHistory : Screen("verification_history")
     data object IncomingCall : Screen("incoming_call/{callerId}") {
         fun createRoute(callerId: String) = "incoming_call/$callerId"
     }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +57,7 @@ fun FamilyMemberProfileScreen(
     memberId: String,
     onNavigateBack: () -> Unit,
     onStartCall: (String) -> Unit,
+    onVerifyVoice: (String) -> Unit = {},
     viewModel: FamilyViewModel = viewModel(factory = FamilyViewModel.Factory)
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -239,6 +241,16 @@ fun FamilyMemberProfileScreen(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Action: Verify Voice Identity
+            EchoPrimaryButton(
+                text = "Verify Voice Identity",
+                onClick = { onVerifyVoice(member.memberId.ifBlank { member.id }) },
+                leadingIcon = Icons.Default.Security,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 

@@ -36,8 +36,11 @@ import com.echoshield.settings.HelpSupportScreen
 import com.echoshield.settings.PrivacyPolicyScreen
 import com.echoshield.settings.PrivacySettingsScreen
 import com.echoshield.settings.SettingsScreen
+import com.echoshield.verification.VerificationHistoryScreen
 import com.echoshield.verification.VerificationProgressScreen
 import com.echoshield.verification.VerificationResultsScreen
+import com.echoshield.verification.VoiceVerificationScreen
+import com.echoshield.verification.VoiceVerificationViewModel
 import com.echoshield.voice.MicrophonePermissionScreen
 import com.echoshield.voice.RecordingReviewScreen
 import com.echoshield.voice.VoiceEnrollmentIntroScreen
@@ -51,7 +54,8 @@ fun EchoNavGraph(
     modifier: Modifier = Modifier,
     authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory),
     familyViewModel: FamilyViewModel = viewModel(factory = FamilyViewModel.Factory),
-    voiceViewModel: com.echoshield.voice.VoiceViewModel = viewModel(factory = com.echoshield.voice.VoiceViewModel.Factory)
+    voiceViewModel: com.echoshield.voice.VoiceViewModel = viewModel(factory = com.echoshield.voice.VoiceViewModel.Factory),
+    voiceVerificationViewModel: VoiceVerificationViewModel = viewModel()
 ) {
     NavHost(
         navController = navController,
@@ -197,6 +201,7 @@ fun EchoNavGraph(
                 memberId = memberId,
                 onNavigateBack = { navController.popBackStack() },
                 onStartCall = { id -> navController.navigate(Screen.OutgoingCall.createRoute(id)) },
+                onVerifyVoice = { id -> navController.navigate(Screen.VoiceVerification.createRoute(id)) },
                 viewModel = familyViewModel
             )
         }
@@ -347,11 +352,40 @@ fun EchoNavGraph(
             )
         }
 
+        // --- SCREEN: VOICE IDENTITY VERIFICATION STUDIO ---
+        composable(
+            route = Screen.VoiceVerification.route,
+            arguments = listOf(
+                navArgument("memberId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val memberId = backStackEntry.arguments?.getString("memberId")
+            VoiceVerificationScreen(
+                preselectedMemberId = memberId,
+                onNavigateBack = { navController.popBackStack() },
+                onViewHistory = { navController.navigate(Screen.VerificationHistory.route) },
+                viewModel = voiceVerificationViewModel
+            )
+        }
+
+        // --- SCREEN: VERIFICATION AUDIT HISTORY ---
+        composable(Screen.VerificationHistory.route) {
+            VerificationHistoryScreen(
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = voiceVerificationViewModel
+            )
+        }
+
         // --- SCREEN 23: CALL HISTORY ---
         composable(Screen.CallHistory.route) {
             CallHistoryScreen(
                 onOpenDrawer = onOpenDrawer,
-                onViewReportDetails = { callId -> navController.navigate(Screen.ReportDetails.createRoute(callId)) }
+                onViewReportDetails = { callId -> navController.navigate(Screen.ReportDetails.createRoute(callId)) },
+                onViewVerificationAudit = { navController.navigate(Screen.VerificationHistory.route) }
             )
         }
 
