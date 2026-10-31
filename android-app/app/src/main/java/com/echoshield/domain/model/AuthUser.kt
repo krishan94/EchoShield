@@ -16,3 +16,4 @@ data class AuthUser(
     val isEmailVerified: Boolean = false,
     val photoUrl: String? = null
 )
+

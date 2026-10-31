@@ -24,3 +24,4 @@ sealed class AuthResult<out T> {
         is Error -> this
     }
 }
+

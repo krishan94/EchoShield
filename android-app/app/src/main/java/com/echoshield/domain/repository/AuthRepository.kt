@@ -60,3 +60,4 @@ interface AuthRepository {
      */
     suspend fun getIdToken(forceRefresh: Boolean = false): AuthResult<String>
 }
+

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from fastapi import HTTPException, status
 import firebase_admin.auth as fb_auth
@@ -9,8 +9,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../backend")))
 
 from app.main import app
-from app.auth.security import verify_firebase_token, get_current_user, get_verified_user
-from app.auth.models import AuthenticatedUser
+from app.auth.security import verify_firebase_token
 
 client = TestClient(app)
 
@@ -146,3 +145,4 @@ def test_gated_endpoint_permits_verified_email():
         )
         assert response.status_code == 200
         assert response.json()["role"] == "Verified Family Member"
+

@@ -233,3 +233,4 @@ fun FirebaseUser.toAuthUser(): AuthUser {
         photoUrl = photoUrl?.toString()
     )
 }
+

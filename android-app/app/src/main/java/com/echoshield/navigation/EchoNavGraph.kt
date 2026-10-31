@@ -24,6 +24,7 @@ import com.echoshield.dashboard.DashboardScreen
 import com.echoshield.family.AddFamilyMemberScreen
 import com.echoshield.family.FamilyListScreen
 import com.echoshield.family.FamilyMemberProfileScreen
+import com.echoshield.family.FamilyViewModel
 import com.echoshield.family.InvitationsScreen
 import com.echoshield.notifications.NotificationsScreen
 import com.echoshield.reports.CallHistoryScreen
@@ -46,7 +47,8 @@ fun EchoNavGraph(
     navController: NavHostController,
     onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier,
-    authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
+    authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory),
+    familyViewModel: FamilyViewModel = viewModel(factory = FamilyViewModel.Factory)
 ) {
     NavHost(
         navController = navController,
@@ -160,7 +162,8 @@ fun EchoNavGraph(
                 onAddMember = { navController.navigate(Screen.AddFamilyMember.route) },
                 onViewInvitations = { navController.navigate(Screen.Invitations.route) },
                 onMemberClick = { memberId -> navController.navigate(Screen.FamilyMemberProfile.createRoute(memberId)) },
-                onStartCall = { memberId -> navController.navigate(Screen.OutgoingCall.createRoute(memberId)) }
+                onStartCall = { memberId -> navController.navigate(Screen.OutgoingCall.createRoute(memberId)) },
+                viewModel = familyViewModel
             )
         }
 
@@ -168,14 +171,16 @@ fun EchoNavGraph(
         composable(Screen.AddFamilyMember.route) {
             AddFamilyMemberScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onInvitationSent = { navController.popBackStack() }
+                onInvitationSent = { navController.popBackStack() },
+                viewModel = familyViewModel
             )
         }
 
         // --- SCREEN 10: INVITATIONS ---
         composable(Screen.Invitations.route) {
             InvitationsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = familyViewModel
             )
         }
 
@@ -188,7 +193,8 @@ fun EchoNavGraph(
             FamilyMemberProfileScreen(
                 memberId = memberId,
                 onNavigateBack = { navController.popBackStack() },
-                onStartCall = { id -> navController.navigate(Screen.OutgoingCall.createRoute(id)) }
+                onStartCall = { id -> navController.navigate(Screen.OutgoingCall.createRoute(id)) },
+                viewModel = familyViewModel
             )
         }
 

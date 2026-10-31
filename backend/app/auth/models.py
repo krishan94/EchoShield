@@ -32,3 +32,4 @@ class UserProfileResponse(BaseModel):
     email_verified: bool = False
     name: Optional[str] = None
     role: str = "Family Member"
+

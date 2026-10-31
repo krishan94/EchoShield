@@ -19,7 +19,27 @@ data class FamilyMember(
     val isOnline: Boolean,
     val isVoiceEnrolled: Boolean,
     val lastActive: String,
-    val voiceQualityScore: Float = 0.92f
+    val voiceQualityScore: Float = 0.92f,
+    val email: String = "",
+    val memberId: String = id
+)
+
+data class FamilyInvitation(
+    val id: String,
+    val senderId: String,
+    val senderName: String,
+    val senderEmail: String,
+    val recipientEmail: String,
+    val recipientId: String? = null,
+    val relationship: String,
+    val status: String = "pending",
+    val createdAt: String = ""
+)
+
+data class UserSearchInfo(
+    val exists: Boolean,
+    val email: String,
+    val name: String? = null
 )
 
 data class PendingInvitation(

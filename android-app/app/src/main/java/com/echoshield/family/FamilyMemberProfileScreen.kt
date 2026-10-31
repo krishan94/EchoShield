@@ -1,6 +1,7 @@
 package com.echoshield.family
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,18 +15,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,14 +38,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.echoshield.core.components.EchoAvatar
 import com.echoshield.core.components.EchoCard
 import com.echoshield.core.components.EchoConfirmationDialog
 import com.echoshield.core.components.EchoDangerButton
 import com.echoshield.core.components.EchoPrimaryButton
-import com.echoshield.core.components.EchoSecondaryButton
 import com.echoshield.core.components.EchoTopAppBar
 import com.echoshield.data.preview.PreviewData
+import com.echoshield.domain.model.FamilyMember
+import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 import com.echoshield.theme.SuccessGreen
 import com.echoshield.theme.WarningAmber
@@ -51,11 +56,20 @@ import com.echoshield.theme.WarningAmber
 fun FamilyMemberProfileScreen(
     memberId: String,
     onNavigateBack: () -> Unit,
-    onStartCall: (String) -> Unit
+    onStartCall: (String) -> Unit,
+    viewModel: FamilyViewModel = viewModel(factory = FamilyViewModel.Factory)
 ) {
-    val member = PreviewData.familyMembers.find { it.id == memberId } ?: PreviewData.familyMembers.first()
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(memberId) {
+        viewModel.loadMemberProfile(memberId)
+    }
+
+    val member: FamilyMember = uiState.members.find { it.id == memberId || it.memberId == memberId }
+        ?: uiState.selectedMember
+        ?: PreviewData.familyMembers.first()
+
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var currentRelationship by remember { mutableStateOf(member.relationship) }
 
     Column(
         modifier = Modifier
@@ -77,6 +91,34 @@ fun FamilyMemberProfileScreen(
         ) {
             Spacer(modifier = Modifier.height(10.dp))
 
+            // Error banner if present
+            if (uiState.errorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DangerRed.copy(alpha = 0.12f))
+                        .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DangerRed
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
             // Avatar & Name Card
             EchoAvatar(
                 name = member.name,
@@ -94,7 +136,7 @@ fun FamilyMemberProfileScreen(
             )
 
             Text(
-                text = "$currentRelationship • ${member.lastActive}",
+                text = if (member.email.isNotBlank()) "${member.relationship} • ${member.email}" else member.relationship,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -104,7 +146,7 @@ fun FamilyMemberProfileScreen(
             // Call Action Button
             EchoPrimaryButton(
                 text = "Initiate Encrypted Call",
-                onClick = { onStartCall(member.id) },
+                onClick = { onStartCall(member.memberId.ifEmpty { member.id }) },
                 leadingIcon = Icons.Default.Call
             )
 
@@ -147,7 +189,11 @@ fun FamilyMemberProfileScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (member.isVoiceEnrolled) "192-dim ECAPA-TDNN Embedding stored with AES-256-GCM encryption." else "This member has not yet recorded voice samples. Calls cannot be biometrically verified.",
+                            text = if (member.isVoiceEnrolled) {
+                                "Pretrained ECAPA-TDNN embedding verified and protected with hardware keystore encryption."
+                            } else {
+                                "This member has not yet recorded voice samples. Live calls cannot be biometrically verified until they complete enrollment."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -176,33 +222,19 @@ fun FamilyMemberProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Relationship Editing Card
+            // Relationship Information Card
             EchoCard(padding = 18.dp) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Family Circle Role",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = currentRelationship,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    EchoSecondaryButton(
-                        text = "Edit",
-                        onClick = {
-                            currentRelationship = if (currentRelationship == "Spouse") "Co-Guardian" else "Spouse"
-                        },
-                        leadingIcon = Icons.Default.Edit,
-                        modifier = Modifier.width(100.dp),
-                        height = 40.dp
+                Column {
+                    Text(
+                        text = "Family Circle Role",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = member.relationship,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -213,7 +245,8 @@ fun FamilyMemberProfileScreen(
             EchoDangerButton(
                 text = "Remove From Family Circle",
                 onClick = { showDeleteDialog = true },
-                leadingIcon = Icons.Default.Delete
+                leadingIcon = Icons.Default.Delete,
+                enabled = !uiState.isLoading
             )
         }
     }
@@ -221,16 +254,15 @@ fun FamilyMemberProfileScreen(
     if (showDeleteDialog) {
         EchoConfirmationDialog(
             title = "Remove ${member.name}?",
-            message = "Removing this member disconnects encrypted in-app calling and mutual biometric voice verification. This action can be reversed via a new family invitation.",
+            message = "Removing this member disconnects encrypted in-app calling and mutual biometric voice verification. Their account and voice profile will NOT be deleted, and you may re-invite them at any time.",
             confirmText = "Remove Member",
             isDestructive = true,
             icon = Icons.Default.Delete,
             onConfirm = {
                 showDeleteDialog = false
-                onNavigateBack()
+                viewModel.removeFamilyMember(member.id, onSuccess = onNavigateBack)
             },
             onDismiss = { showDeleteDialog = false }
         )
     }
 }
-
