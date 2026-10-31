@@ -1,0 +1,117 @@
+# ==========================================
+# EchoShield - Git Ignore Configuration
+# ==========================================
+
+# --- Android / Gradle ---
+.gradle/
+build/
+*/build/
+app/build/
+android-app/app/build/
+android-app/build/
+.idea/
+*.iml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Android Keystores & Signing
+*.jks
+*.keystore
+signing.properties
+
+# Google Services & Firebase Secrets
+# Sensitive client config and service account credentials MUST NOT be committed
+google-services.json
+*serviceAccountKey*.json
+*service-account*.json
+firebase-credentials.json
+
+# --- Python & Backend ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Quality
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+*.crt
+
+# --- AI Engine & Model Checkpoints ---
+# Pretrained checkpoints are downloaded dynamically or hosted in storage
+ai-engine/models/*.pt
+ai-engine/models/*.pth
+ai-engine/models/*.onnx
+ai-engine/models/*.bin
+ai-engine/models/*.safetensors
+*.ckpt
+speechbrain/
+huggingface/
+.cache/
+
+# --- Audio & Biometric Data ---
+# Strictly protect biometric privacy: never commit raw voice recordings or test audio
+*.wav
+*.pcm
+*.m4a
+*.mp3
+*.flac
+*.ogg
+raw_recordings/
+temp_audio/
+data/enrollment_samples/
+data/temp/
+
+# --- OS & Editor artifacts ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.vscode/

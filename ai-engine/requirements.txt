@@ -1,0 +1,23 @@
+# ==========================================
+# EchoShield - AI Verification Engine Requirements
+# ==========================================
+
+# Deep Learning Frameworks
+torch==2.15.0
+torchaudio==2.11.1
+speechbrain==1.1.2
+onnxruntime==1.20.0
+
+# Audio Signal Processing & Feature Extraction
+soundfile==0.14.0
+scipy==1.18.1
+numpy==2.5.4
+librosa==0.10.2.post1
+
+# Pretrained Model Checkpoint Hub
+huggingface-hub==0.26.2
+safetensors==0.4.5
+
+# Numerical Evaluation & Validation
+pytest==8.3.3
+scikit-learn==1.5.2
