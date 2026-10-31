@@ -133,3 +133,4 @@ Navigate to `http://localhost:8000/docs` to view the interactive OpenAPI documen
 python -c "import speechbrain; print('SpeechBrain version:', speechbrain.__version__)"
 ```
 Expected output: `SpeechBrain version: 1.1.2`
+

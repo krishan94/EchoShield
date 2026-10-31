@@ -213,3 +213,4 @@ sequenceDiagram
 - `/families/{familyId}`: Family name, inviteCode, adminUserId, createdAt.
 - `/enrollments/{userId}`: Consent record, enrollmentStatus (`pending` | `completed`), encryptedEmbedding, vectorIv, modelVersion, updatedAt.
 - `/verifications/{callId}`: CallerId, calleeId, familyId, timestamp, durationSeconds, overallVerdict, minSimilarityScore, maxSpoofScore, forensicBreakdown.
+
