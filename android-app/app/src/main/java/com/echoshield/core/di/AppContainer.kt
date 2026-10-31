@@ -4,10 +4,14 @@ import com.echoshield.data.remote.AuthRemoteDataSource
 import com.echoshield.data.remote.FamilyRemoteDataSource
 import com.echoshield.data.remote.FamilyRemoteDataSourceImpl
 import com.echoshield.data.remote.FirebaseAuthDataSource
+import com.echoshield.data.remote.VoiceRemoteDataSource
+import com.echoshield.data.remote.VoiceRemoteDataSourceImpl
 import com.echoshield.data.repository.AuthRepositoryImpl
 import com.echoshield.data.repository.FamilyRepositoryImpl
+import com.echoshield.data.repository.VoiceRepositoryImpl
 import com.echoshield.domain.repository.AuthRepository
 import com.echoshield.domain.repository.FamilyRepository
+import com.echoshield.domain.repository.VoiceRepository
 
 /**
  * Lightweight Dependency Container providing application-scoped singleton instances.
@@ -20,6 +24,9 @@ object AppContainer {
 
     @Volatile
     private var customFamilyRepository: FamilyRepository? = null
+
+    @Volatile
+    private var customVoiceRepository: VoiceRepository? = null
 
     /**
      * Singleton instance of [AuthRepository]. Allows override for automated testing.
@@ -41,6 +48,16 @@ object AppContainer {
             }
         }
 
+    /**
+     * Singleton instance of [VoiceRepository]. Allows override for automated testing.
+     */
+    val voiceRepository: VoiceRepository
+        get() = customVoiceRepository ?: synchronized(this) {
+            customVoiceRepository ?: createDefaultVoiceRepository().also {
+                customVoiceRepository = it
+            }
+        }
+
     private fun createDefaultAuthRepository(): AuthRepository {
         val remoteDataSource: AuthRemoteDataSource = FirebaseAuthDataSource()
         return AuthRepositoryImpl(remoteDataSource)
@@ -49,6 +66,11 @@ object AppContainer {
     private fun createDefaultFamilyRepository(): FamilyRepository {
         val remoteDataSource: FamilyRemoteDataSource = FamilyRemoteDataSourceImpl(authRepository)
         return FamilyRepositoryImpl(remoteDataSource)
+    }
+
+    private fun createDefaultVoiceRepository(): VoiceRepository {
+        val remoteDataSource: VoiceRemoteDataSource = VoiceRemoteDataSourceImpl(authRepository)
+        return VoiceRepositoryImpl(remoteDataSource)
     }
 
     /**
@@ -60,5 +82,9 @@ object AppContainer {
 
     fun setFamilyRepositoryForTesting(repository: FamilyRepository?) {
         customFamilyRepository = repository
+    }
+
+    fun setVoiceRepositoryForTesting(repository: VoiceRepository?) {
+        customVoiceRepository = repository
     }
 }

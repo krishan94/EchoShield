@@ -21,32 +21,39 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.echoshield.core.components.EchoCard
 import com.echoshield.core.components.EchoDangerButton
 import com.echoshield.core.components.EchoOutlinedButton
 import com.echoshield.core.components.EchoPrimaryButton
 import com.echoshield.core.components.EchoTopAppBar
 import com.echoshield.core.components.EchoWaveformBars
+import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 import com.echoshield.theme.SuccessGreen
+import com.echoshield.theme.WarningAmber
 
 @Composable
 fun RecordingReviewScreen(
@@ -54,10 +61,22 @@ fun RecordingReviewScreen(
     onAcceptSample: () -> Unit,
     onRecordAgain: () -> Unit,
     onDeleteSample: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: VoiceViewModel = viewModel(factory = VoiceViewModel.Factory)
 ) {
-    var isPlaying by remember { mutableStateOf(false) }
-    var isUploading by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
+    val playbackManager = viewModel.playbackManager
+    val isPlaying by playbackManager.isPlaying.collectAsState()
+    val playbackProgress by playbackManager.playbackProgress.collectAsState()
+
+    val sample = uiState.currentReviewSample
+
+    DisposableEffect(Unit) {
+        onDispose {
+            playbackManager.stop()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -65,9 +84,12 @@ fun RecordingReviewScreen(
             .background(MaterialTheme.colorScheme.background)
     ) {
         EchoTopAppBar(
-            title = "Review Sample $sampleNumber",
+            title = "Review Sample ${sample?.sampleIndex ?: sampleNumber}",
             subtitle = "Biometric Quality Evaluation",
-            onNavigateBack = onNavigateBack
+            onNavigateBack = {
+                playbackManager.stop()
+                onNavigateBack()
+            }
         )
 
         Column(
@@ -79,25 +101,61 @@ fun RecordingReviewScreen(
         ) {
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Waveform Box & Playback Control
+            // Error banner if any
+            if (uiState.errorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DangerRed.copy(alpha = 0.12f))
+                        .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DangerRed
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
+            // Audio Player Card
             EchoCard(padding = 20.dp) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Play / Pause Circle
+                    // Play / Pause Circle Button
                     Box(
                         modifier = Modifier
                             .size(54.dp)
                             .clip(CircleShape)
                             .background(PrimaryTeal)
-                            .clickable { isPlaying = !isPlaying },
+                            .clickable {
+                                if (sample?.file != null && sample.file.exists()) {
+                                    if (isPlaying) {
+                                        playbackManager.pause()
+                                    } else {
+                                        playbackManager.playAudio(sample.file, scope)
+                                    }
+                                }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = androidx.compose.ui.graphics.Color.Black,
+                            tint = Color.Black,
                             modifier = Modifier.size(30.dp)
                         )
                     }
@@ -106,24 +164,37 @@ fun RecordingReviewScreen(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Sample #$sampleNumber (16kHz PCM)",
+                            text = "Sample #${sample?.sampleIndex ?: sampleNumber} (16kHz Mono)",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (isPlaying) "Playing back raw capture..." else "Duration: 7.8 seconds",
+                            text = if (isPlaying) "Playing back raw capture..." else "Duration: ${"%.1f".format(sample?.durationSeconds ?: 0f)} seconds",
                             style = MaterialTheme.typography.bodySmall,
                             color = PrimaryTeal
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Playback progress bar
+                LinearProgressIndicator(
+                    progress = { playbackProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = PrimaryTeal,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(70.dp)
+                        .height(64.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .padding(horizontal = 14.dp),
@@ -139,24 +210,25 @@ fun RecordingReviewScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Quality Assessment Card
-            EchoCard(padding = 16.dp) {
+            // Acoustic Quality Assessment Card
+            EchoCard(padding = 18.dp) {
+                val isValid = sample?.isValid ?: false
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.VerifiedUser,
+                        imageVector = if (isValid) Icons.Default.VerifiedUser else Icons.Default.Warning,
                         contentDescription = null,
-                        tint = SuccessGreen,
+                        tint = if (isValid) SuccessGreen else WarningAmber,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Acoustic Sample Validated",
+                        text = if (isValid) "Acoustic Sample Validated" else "Quality Warning",
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -168,49 +240,83 @@ fun RecordingReviewScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "34 dB (Clean)",
+                        text = "${sample?.snrDb?.toInt() ?: 0} dB (${if ((sample?.snrDb ?: 0f) > 20f) "Clean" else "Moderate"})",
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                        color = SuccessGreen
+                        color = if ((sample?.snrDb ?: 0f) > 20f) SuccessGreen else WarningAmber
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "ECAPA-TDNN Feature Extraction",
+                        text = "ECAPA-TDNN Compatibility",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Optimal Convergence",
+                        text = if (isValid) "16kHz PCM Verified" else "Check Failed",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = if (isValid) PrimaryTeal else DangerRed
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Sample Progress",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${sample?.sampleIndex ?: sampleNumber} of ${uiState.totalSamples} Completed",
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                         color = PrimaryTeal
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            // Actions
+            // Action Buttons
+            val isFinalSample = (sample?.sampleIndex ?: sampleNumber) >= uiState.totalSamples
+            val buttonText = when {
+                uiState.isUploading -> "Extracting & Encrypting Embeddings..."
+                isFinalSample -> "Submit 3 Samples & Finalize Voice Profile"
+                else -> "Accept Sample & Record Next (${(sample?.sampleIndex ?: sampleNumber) + 1}/3)"
+            }
+
             EchoPrimaryButton(
-                text = if (isUploading) "Extracting & Encrypting Embedding..." else "Accept Sample & Proceed",
+                text = buttonText,
                 onClick = {
-                    isUploading = true
-                    onAcceptSample()
+                    playbackManager.stop()
+                    viewModel.acceptCurrentSample(
+                        onProceedToNext = onAcceptSample,
+                        onAllSamplesCompleted = onAcceptSample
+                    )
                 },
-                isLoading = isUploading,
-                leadingIcon = Icons.Default.Check
+                enabled = sample?.isValid == true && !uiState.isUploading,
+                isLoading = uiState.isUploading,
+                leadingIcon = Icons.Default.Check,
+                modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(modifier = Modifier.height(14.dp))
 
             EchoOutlinedButton(
                 text = "Re-record This Sample",
-                onClick = onRecordAgain,
+                onClick = {
+                    playbackManager.stop()
+                    viewModel.rerecordCurrentSample()
+                    onRecordAgain()
+                },
                 leadingIcon = Icons.Default.Replay,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -219,10 +325,17 @@ fun RecordingReviewScreen(
 
             EchoDangerButton(
                 text = "Discard & Delete Sample",
-                onClick = onDeleteSample,
-                leadingIcon = Icons.Default.Delete
+                onClick = {
+                    playbackManager.stop()
+                    viewModel.discardCurrentSample {
+                        onDeleteSample()
+                    }
+                },
+                leadingIcon = Icons.Default.Delete,
+                modifier = Modifier.fillMaxWidth()
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
-

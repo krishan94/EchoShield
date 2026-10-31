@@ -46,6 +46,20 @@ service cloud.firestore {
       );
       allow delete: if isAuthenticated() && resource.data.sender_id == request.auth.uid;
     }
+
+    // Biometric Voice Consents collection:
+    // - Only the account owner can view or record their informed biometric consent
+    match /voice_consents/{userId} {
+      allow read, create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow delete: if false; // Consents are updated to 'revoked', never deleted for compliance auditing
+    }
+
+    // Biometric Voice Profiles collection:
+    // - Encrypted embeddings are strictly private to the authenticated owner
+    // - Family members and unauthorized third parties cannot read biometric vectors
+    match /voice_profiles/{userId} {
+      allow read, create, update, delete: if isAuthenticated() && request.auth.uid == userId;
+    }
   }
 }
 

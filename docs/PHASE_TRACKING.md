@@ -1,7 +1,7 @@
 # EchoShield Phase Tracking & Implementation Roadmap
 
 **Project**: EchoShield  
-**Lifecycle Status**: Phase 03 Completed | Ready for Phase 04  
+**Lifecycle Status**: Phase 04 Completed | Ready for Phase 05  
 **Last Updated**: 2026-10-31  
 
 ---
@@ -14,7 +14,7 @@
 | **01** | **Complete Android UI/UX** | 31 Jetpack Compose Screens, Design System, Global Components, Navigation | **COMPLETED** | Complete 31-screen UI with dark/light theme, reusable components, isolated preview data, bottom bar and navigation drawer. Verified with unit tests and successful debug APK build (`app-debug.apk`). |
 | **02** | **Firebase Auth & Security Foundation** | User Registration, Login, Token Interceptor, Backend Token Verification | **COMPLETED** | Real Firebase Email/Password Auth, Coroutine DataSource & Repository, AuthViewModel, Session Restoration, 14 Android tests + 10 Backend tests passing, Debug APK assembled. |
 | **03** | **Family Accounts & Member Circles** | Family Group Management, Invites, Member Roles | **COMPLETED** | Complete Family Management System (List, Add with safe search, Tabbed Invitations, Profile & Confirmation Dialog for removal), Firestore schema & rules, 8 FastAPI endpoints, dual-mode remote data source, 17 backend tests + Android unit tests passing, Debug APK assembled. |
-| **04** | **Consent-Based Voice Enrollment** | Informed Consent UI, Non-blocking Audio Recording, Audio Upload | *PENDING* | Biometric consent agreement screen, 16kHz PCM audio recorder with waveform visualizer, audio chunk validation, secure upload API. |
+| **04** | **Consent-Based Voice Enrollment** | Informed Consent UI, Non-blocking Audio Recording, Audio Upload | **COMPLETED** | Complete 12-step guided enrollment studio, native 16kHz AudioRecord capture with live mic-driven waveform, acoustic quality validator, SpeechBrain ECAPA-TDNN 192-dim embedding extraction, AES-256-GCM biometric encryption at rest, 5 FastAPI endpoints, 27 backend tests + 41 Android tests passing, Debug APK assembled. |
 | **05** | **Pretrained Speaker Recognition** | SpeechBrain ECAPA-TDNN, Biometric Vector Extraction, Cosine Scorer | *PENDING* | SpeechBrain model wrapper, 192-dim embedding extraction, vector encryption (AES-256-GCM), cosine similarity unit test suite. |
 | **06** | **Audio Anti-Spoofing & Deepfake Detection** | Deepfake Detection Model, Bonafide vs Spoof Classification | *PENDING* | Pretrained anti-spoof inference pipeline, artifact detection (TTS/VC/replay), confidence calibration, benchmark test suite. |
 | **07** | **Real-Time WebRTC Calling & Signalling** | WebRTC Audio Channel, Authenticated WebSocket Signalling | *PENDING* | P2P call signalling protocol, WebRTC audio track setup, In-call dialer/receiver Compose UI, call state machine. |

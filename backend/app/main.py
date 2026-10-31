@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.auth.router import router as auth_router
 from app.family.router import router as family_router
+from app.enrollment.router import router as enrollment_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -26,6 +27,7 @@ app.add_middleware(
 # Mount API Routers
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(family_router, prefix=settings.API_V1_STR)
+app.include_router(enrollment_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health", tags=["System Health"])

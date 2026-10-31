@@ -45,7 +45,6 @@ import com.echoshield.core.components.EchoConfirmationDialog
 import com.echoshield.core.components.EchoDangerButton
 import com.echoshield.core.components.EchoPrimaryButton
 import com.echoshield.core.components.EchoTopAppBar
-import com.echoshield.data.preview.PreviewData
 import com.echoshield.domain.model.FamilyMember
 import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
@@ -65,11 +64,32 @@ fun FamilyMemberProfileScreen(
         viewModel.loadMemberProfile(memberId)
     }
 
-    val member: FamilyMember = uiState.members.find { it.id == memberId || it.memberId == memberId }
+    val member: FamilyMember? = uiState.members.find { it.id == memberId || it.memberId == memberId }
         ?: uiState.selectedMember
-        ?: PreviewData.familyMembers.first()
 
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (member == null) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            EchoTopAppBar(
+                title = "Profile",
+                subtitle = "Family Circle",
+                onNavigateBack = onNavigateBack
+            )
+            com.echoshield.core.components.EchoEmptyState(
+                title = "Member Not Found",
+                description = "The requested family circle profile could not be located or has been severed.",
+                actionButtonText = "Return to Family Circle",
+                onActionClick = onNavigateBack,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        return
+    }
 
     Column(
         modifier = Modifier

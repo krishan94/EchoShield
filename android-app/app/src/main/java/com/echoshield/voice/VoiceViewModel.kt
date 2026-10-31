@@ -1,0 +1,285 @@
+package com.echoshield.voice
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.echoshield.core.di.AppContainer
+import com.echoshield.domain.model.RecordedSample
+import com.echoshield.domain.model.VoiceProfileInfo
+import com.echoshield.domain.repository.VoiceRepository
+import com.echoshield.voice.audio.AudioPlaybackManager
+import com.echoshield.voice.audio.AudioQualityValidator
+import com.echoshield.voice.audio.AudioRecordManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.io.File
+
+data class VoiceUiState(
+    val isLoading: Boolean = false,
+    val isUploading: Boolean = false,
+    val currentSampleIndex: Int = 1,
+    val totalSamples: Int = 3,
+    val recordedSamples: Map<Int, RecordedSample> = emptyMap(),
+    val currentReviewSample: RecordedSample? = null,
+    val voiceProfile: VoiceProfileInfo? = null,
+    val isConsentGranted: Boolean = false,
+    val isMicrophonePermissionGranted: Boolean = false,
+    val isPermissionPermanentlyDenied: Boolean = false,
+    val errorMessage: String? = null,
+    val successMessage: String? = null
+)
+
+/**
+ * ViewModel managing the guided 12-step voice enrollment state machine.
+ */
+class VoiceViewModel(
+    private val voiceRepository: VoiceRepository,
+    val audioRecordManager: AudioRecordManager? = null,
+    val playbackManager: AudioPlaybackManager = AudioPlaybackManager()
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(VoiceUiState())
+    val uiState: StateFlow<VoiceUiState> = _uiState.asStateFlow()
+
+    val samplePrompts = listOf(
+        "Read aloud: \"The quick brown fox jumps over the lazy dog near the riverbank on a calm afternoon.\"",
+        "Read aloud: \"EchoShield provides encrypted biometric defense and anti-spoofing protection for my family circle.\"",
+        "Read aloud: \"Always verify high-stakes financial requests and emergency alerts using our mutual voice signature.\""
+    )
+
+    init {
+        viewModelScope.launch {
+            voiceRepository.voiceProfile.collect { profile ->
+                _uiState.update {
+                    it.copy(
+                        voiceProfile = profile,
+                        isConsentGranted = (profile?.consentStatus == "granted")
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            voiceRepository.isConsentGranted.collect { granted ->
+                _uiState.update { it.copy(isConsentGranted = granted) }
+            }
+        }
+        refreshVoiceProfile()
+    }
+
+    fun refreshVoiceProfile() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            voiceRepository.refreshVoiceProfile()
+            _uiState.update { it.copy(isLoading = false) }
+        }
+    }
+
+    fun recordConsent(granted: Boolean, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val result = voiceRepository.recordConsent(granted)
+            result.onSuccess {
+                _uiState.update { it.copy(isLoading = false, isConsentGranted = granted) }
+                if (granted) onSuccess()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(isLoading = false, errorMessage = err.message ?: "Failed to record biometric consent.")
+                }
+            }
+        }
+    }
+
+    fun setPermissionGranted(granted: Boolean) {
+        _uiState.update {
+            it.copy(
+                isMicrophonePermissionGranted = granted,
+                isPermissionPermanentlyDenied = false
+            )
+        }
+    }
+
+    fun setPermissionPermanentlyDenied(denied: Boolean) {
+        _uiState.update {
+            it.copy(
+                isMicrophonePermissionGranted = false,
+                isPermissionPermanentlyDenied = denied
+            )
+        }
+    }
+
+    fun startRecording(context: Context) {
+        val sampleIndex = _uiState.value.currentSampleIndex
+        val sampleFile = File(context.cacheDir, "echoshield_voice_sample_${sampleIndex}_${System.currentTimeMillis()}.wav")
+
+        if (audioRecordManager != null) {
+            audioRecordManager.startRecording(sampleFile, viewModelScope)
+        }
+    }
+
+    fun stopRecording(onSampleCaptured: (RecordedSample) -> Unit) {
+        val file = audioRecordManager?.stopRecording()
+        if (file == null || !file.exists()) {
+            _uiState.update { it.copy(errorMessage = "Recording failed. Please try again.") }
+            return
+        }
+
+        // Validate audio quality immediately on client
+        val qualityReport = AudioQualityValidator.validateWavFile(file)
+        val sampleIndex = _uiState.value.currentSampleIndex
+        val prompt = samplePrompts[(sampleIndex - 1).coerceIn(0, samplePrompts.size - 1)]
+
+        val sample = RecordedSample(
+            sampleIndex = sampleIndex,
+            file = file,
+            prompt = prompt,
+            durationSeconds = qualityReport.durationSeconds,
+            snrDb = qualityReport.snrDb,
+            rmsEnergy = qualityReport.rmsEnergy,
+            isValid = qualityReport.isValid
+        )
+
+        _uiState.update {
+            it.copy(
+                currentReviewSample = sample,
+                errorMessage = qualityReport.errorMessage
+            )
+        }
+        onSampleCaptured(sample)
+    }
+
+    fun setSampleForReview(sample: RecordedSample, error: String?) {
+        _uiState.update {
+            it.copy(
+                currentReviewSample = sample,
+                errorMessage = error
+            )
+        }
+    }
+
+    fun cancelRecording() {
+        audioRecordManager?.cancelRecording()
+    }
+
+    fun acceptCurrentSample(onProceedToNext: () -> Unit, onAllSamplesCompleted: () -> Unit) {
+        val sample = _uiState.value.currentReviewSample
+        if (sample == null || !sample.isValid) {
+            _uiState.update { it.copy(errorMessage = "Cannot accept an invalid audio sample. Please re-record.") }
+            return
+        }
+
+        val updatedMap = _uiState.value.recordedSamples.toMutableMap()
+        updatedMap[sample.sampleIndex] = sample
+
+        if (sample.sampleIndex < _uiState.value.totalSamples) {
+            _uiState.update {
+                it.copy(
+                    recordedSamples = updatedMap,
+                    currentSampleIndex = sample.sampleIndex + 1,
+                    currentReviewSample = null,
+                    errorMessage = null
+                )
+            }
+            onProceedToNext()
+        } else {
+            // All 3 samples recorded! Submit for AI embedding extraction
+            _uiState.update {
+                it.copy(
+                    recordedSamples = updatedMap,
+                    isUploading = true,
+                    errorMessage = null
+                )
+            }
+            uploadEnrollmentSamples(updatedMap.values.sortedBy { it.sampleIndex }, onAllSamplesCompleted)
+        }
+    }
+
+    fun rerecordCurrentSample() {
+        val sample = _uiState.value.currentReviewSample
+        sample?.file?.delete()
+        _uiState.update { it.copy(currentReviewSample = null, errorMessage = null) }
+    }
+
+    fun discardCurrentSample(onDiscarded: () -> Unit) {
+        val sample = _uiState.value.currentReviewSample
+        sample?.file?.delete()
+        _uiState.update { it.copy(currentReviewSample = null, errorMessage = null) }
+        onDiscarded()
+    }
+
+    private fun uploadEnrollmentSamples(samples: List<RecordedSample>, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            val files = samples.map { it.file }
+            val result = voiceRepository.enrollVoiceSamples(files)
+            result.onSuccess { res ->
+                _uiState.update {
+                    it.copy(
+                        isUploading = false,
+                        currentSampleIndex = 1,
+                        recordedSamples = emptyMap(),
+                        currentReviewSample = null,
+                        successMessage = res.message
+                    )
+                }
+                onComplete()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isUploading = false,
+                        errorMessage = err.message ?: "Failed to upload and extract voice embeddings."
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteVoiceProfile(onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val result = voiceRepository.deleteVoiceProfile()
+            result.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        voiceProfile = null,
+                        isConsentGranted = false,
+                        successMessage = "Voice profile and biometric embeddings deleted."
+                    )
+                }
+                onSuccess()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = err.message ?: "Failed to delete voice profile."
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearErrorMessage() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        audioRecordManager?.cancelRecording()
+        playbackManager.stop()
+    }
+
+    companion object {
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                VoiceViewModel(
+                    voiceRepository = AppContainer.voiceRepository
+                )
+            }
+        }
+    }
+}

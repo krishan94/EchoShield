@@ -1,6 +1,7 @@
 package com.echoshield.voice
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +14,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
@@ -24,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,18 +38,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.echoshield.core.components.EchoCard
 import com.echoshield.core.components.EchoConsentDialog
 import com.echoshield.core.components.EchoPrimaryButton
 import com.echoshield.core.components.EchoTopAppBar
 import com.echoshield.theme.AccentBlue
+import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 
 @Composable
 fun VoiceEnrollmentIntroScreen(
     onNavigateBack: () -> Unit,
-    onProceedToPermission: () -> Unit
+    onProceedToPermission: () -> Unit,
+    viewModel: VoiceViewModel = viewModel(factory = VoiceViewModel.Factory)
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     var showConsentDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -65,6 +73,34 @@ fun VoiceEnrollmentIntroScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
+            // Error banner if any
+            if (uiState.errorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DangerRed.copy(alpha = 0.12f))
+                        .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            tint = DangerRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DangerRed
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
             // Header Intro Card
             EchoCard(padding = 20.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -134,8 +170,15 @@ fun VoiceEnrollmentIntroScreen(
 
             // Action Button
             EchoPrimaryButton(
-                text = "Review Consent & Begin Studio",
-                onClick = { showConsentDialog = true },
+                text = if (uiState.isConsentGranted) "Consent Verified • Begin Studio" else "Review Consent & Begin Studio",
+                onClick = {
+                    if (uiState.isConsentGranted) {
+                        onProceedToPermission()
+                    } else {
+                        showConsentDialog = true
+                    }
+                },
+                isLoading = uiState.isLoading,
                 trailingIcon = Icons.Default.ArrowForward
             )
 
@@ -147,7 +190,9 @@ fun VoiceEnrollmentIntroScreen(
         EchoConsentDialog(
             onConsentAgreed = {
                 showConsentDialog = false
-                onProceedToPermission()
+                viewModel.recordConsent(true) {
+                    onProceedToPermission()
+                }
             },
             onDismiss = { showConsentDialog = false }
         )
@@ -193,4 +238,3 @@ private fun EnrollmentInfoCard(
         }
     }
 }
-

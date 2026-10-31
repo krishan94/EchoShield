@@ -1,6 +1,8 @@
 package com.echoshield.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -48,7 +50,8 @@ fun EchoNavGraph(
     onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier,
     authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory),
-    familyViewModel: FamilyViewModel = viewModel(factory = FamilyViewModel.Factory)
+    familyViewModel: FamilyViewModel = viewModel(factory = FamilyViewModel.Factory),
+    voiceViewModel: com.echoshield.voice.VoiceViewModel = viewModel(factory = com.echoshield.voice.VoiceViewModel.Factory)
 ) {
     NavHost(
         navController = navController,
@@ -202,7 +205,8 @@ fun EchoNavGraph(
         composable(Screen.VoiceEnrollmentIntro.route) {
             VoiceEnrollmentIntroScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onProceedToPermission = { navController.navigate(Screen.MicrophonePermission.route) }
+                onProceedToPermission = { navController.navigate(Screen.MicrophonePermission.route) },
+                viewModel = voiceViewModel
             )
         }
 
@@ -210,28 +214,45 @@ fun EchoNavGraph(
         composable(Screen.MicrophonePermission.route) {
             MicrophonePermissionScreen(
                 onPermissionGranted = { navController.navigate(Screen.VoiceRecordingStudio.route) },
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = voiceViewModel
             )
         }
 
         // --- SCREEN 14: VOICE RECORDING STUDIO ---
         composable(Screen.VoiceRecordingStudio.route) {
             VoiceRecordingStudioScreen(
-                currentSampleIndex = 1,
                 totalSamples = 3,
                 onRecordingCompleted = { navController.navigate(Screen.RecordingReview.route) },
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = voiceViewModel
             )
         }
 
         // --- SCREEN 15: RECORDING REVIEW ---
         composable(Screen.RecordingReview.route) {
+            val uiState by voiceViewModel.uiState.collectAsState()
             RecordingReviewScreen(
-                sampleNumber = 1,
-                onAcceptSample = { navController.navigate(Screen.VoiceProfileStatus.route) },
-                onRecordAgain = { navController.navigate(Screen.VoiceRecordingStudio.route) },
-                onDeleteSample = { navController.popBackStack() },
-                onNavigateBack = { navController.popBackStack() }
+                sampleNumber = uiState.currentSampleIndex,
+                onAcceptSample = {
+                    if (uiState.currentSampleIndex < uiState.totalSamples) {
+                        navController.navigate(Screen.VoiceRecordingStudio.route) {
+                            popUpTo(Screen.VoiceRecordingStudio.route) { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate(Screen.VoiceProfileStatus.route) {
+                            popUpTo(Screen.VoiceEnrollmentIntro.route) { inclusive = true }
+                        }
+                    }
+                },
+                onRecordAgain = { navController.popBackStack() },
+                onDeleteSample = {
+                    navController.navigate(Screen.VoiceEnrollmentIntro.route) {
+                        popUpTo(Screen.VoiceEnrollmentIntro.route) { inclusive = true }
+                    }
+                },
+                onNavigateBack = { navController.popBackStack() },
+                viewModel = voiceViewModel
             )
         }
 
@@ -243,7 +264,8 @@ fun EchoNavGraph(
                         popUpTo(Screen.VoiceEnrollmentIntro.route) { inclusive = true }
                     }
                 },
-                onReEnrollVoice = { navController.navigate(Screen.VoiceRecordingStudio.route) }
+                onReEnrollVoice = { navController.navigate(Screen.VoiceRecordingStudio.route) },
+                viewModel = voiceViewModel
             )
         }
 

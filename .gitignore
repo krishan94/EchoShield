@@ -84,6 +84,7 @@ htmlcov/
 
 # --- AI Engine & Model Checkpoints ---
 # Pretrained checkpoints are downloaded dynamically or hosted in storage
+models/
 ai-engine/models/*.pt
 ai-engine/models/*.pth
 ai-engine/models/*.onnx
