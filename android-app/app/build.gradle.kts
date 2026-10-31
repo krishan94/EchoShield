@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -30,7 +31,6 @@ android {
             )
         }
         debug {
-            applicationIdSuffix = ".debug"
             isDebuggable = true
         }
     }
@@ -75,6 +75,11 @@ dependencies {
     // Navigation Compose
     implementation("androidx.navigation:navigation-compose:2.8.3")
 
+    // Firebase BoM & Authentication
+    val firebaseBom = platform("com.google.firebase:firebase-bom:33.5.1")
+    implementation(firebaseBom)
+    implementation("com.google.firebase:firebase-auth")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
@@ -87,3 +92,4 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+

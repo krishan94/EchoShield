@@ -56,3 +56,4 @@ val SafeVerifiedGradient = Brush.horizontalGradient(
 val RadarGlowBrush = Brush.radialGradient(
     colors = listOf(Color(0x6622C7A9), Color(0x1A438BFF), Color.Transparent)
 )
+

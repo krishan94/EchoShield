@@ -62,3 +62,4 @@ sealed class Screen(val route: String) {
     // Diagnostic & State Showcase
     data object StateShowcase : Screen("state_showcase")
 }
+
