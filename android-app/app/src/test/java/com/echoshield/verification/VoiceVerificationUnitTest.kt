@@ -7,6 +7,9 @@ import com.echoshield.domain.model.VoiceConsentRecord
 import com.echoshield.domain.model.VoiceEnrollmentResult
 import com.echoshield.domain.model.VoiceProfileInfo
 import com.echoshield.domain.model.VoiceVerificationResult
+import com.echoshield.domain.model.AntiSpoofOutcome
+import com.echoshield.domain.model.AntiSpoofAnalysisResult
+import com.echoshield.domain.model.AntiSpoofAudioQuality
 import com.echoshield.domain.repository.FamilyRepository
 import com.echoshield.domain.repository.VoiceRepository
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +113,9 @@ class TestVoiceRepository : VoiceRepository {
     var shouldFailVerification: Boolean = false
     var simulatedOutcome: VerificationOutcome = VerificationOutcome.VOICE_MATCHED
     var simulatedSimilarity: Float = 0.88f
+    var shouldFailSpoof: Boolean = false
+    var simulatedSpoofOutcome: AntiSpoofOutcome = AntiSpoofOutcome.NO_SPOOF_SIGNAL_DETECTED
+    var simulatedSpoofScore: Float? = 0.08f
     val historyLog = mutableListOf<VerificationHistoryRecord>()
 
     override suspend fun recordConsent(granted: Boolean): Result<VoiceConsentRecord> {
@@ -170,6 +176,44 @@ class TestVoiceRepository : VoiceRepository {
             )
         )
 
+        return Result.success(result)
+    }
+
+    override suspend fun analyzeSpoofSample(
+        audioFile: File,
+        requestId: String?
+    ): Result<AntiSpoofAnalysisResult> {
+        if (shouldFailSpoof) {
+            return Result.failure(Exception("Anti-spoof service unavailable"))
+        }
+
+        val result = AntiSpoofAnalysisResult(
+            analysisId = "spf_unit_test_42",
+            requestId = requestId,
+            resultCategory = simulatedSpoofOutcome,
+            spoofScore = simulatedSpoofScore,
+            confidenceScore = 0.94f,
+            rawScores = mapOf("fake_probability" to (simulatedSpoofScore ?: 0.0f)),
+            scoreInterpretation = "Evaluated by unit test mock",
+            modelName = "mo-thecreator/Deepfake-audio-detection (Wav2Vec2)",
+            modelVersion = "v1.0-hf",
+            audioQuality = AntiSpoofAudioQuality(
+                durationSeconds = 3.5f,
+                sampleRate = 16000,
+                channels = 1,
+                rmsEnergy = 0.04f,
+                snrDb = 22.0f,
+                clippingRatio = 0.0f,
+                silenceRatio = 0.05f,
+                statusLabel = "EXCELLENT"
+            ),
+            timestamp = "2026-11-01T00:00:00Z",
+            explanation = "Synthetic speech analysis completed.",
+            isExperimental = true,
+            replayDetectionSupported = false,
+            replayLimitationNotice = "Replay detection limitation notice",
+            disclaimer = "Experimental disclaimer"
+        )
         return Result.success(result)
     }
 
@@ -314,5 +358,93 @@ class VoiceVerificationUnitTest {
         assertEquals(VerificationOutcome.AUDIO_QUALITY_FAILED, VerificationOutcome.fromString("AUDIO_QUALITY_FAILED"))
         assertEquals(VerificationOutcome.PROFILE_NOT_ENROLLED, VerificationOutcome.fromString("PROFILE_NOT_ENROLLED"))
         assertEquals(VerificationOutcome.INCONCLUSIVE, VerificationOutcome.fromString("UNKNOWN_VALUE"))
+    }
+
+    @Test
+    fun antiSpoofOutcome_enumParsing() {
+        assertEquals(AntiSpoofOutcome.SPOOF_SUSPECTED, AntiSpoofOutcome.fromString("SPOOF_SUSPECTED"))
+        assertEquals(AntiSpoofOutcome.NO_SPOOF_SIGNAL_DETECTED, AntiSpoofOutcome.fromString("NO_SPOOF_SIGNAL_DETECTED"))
+        assertEquals(AntiSpoofOutcome.INCONCLUSIVE, AntiSpoofOutcome.fromString("INCONCLUSIVE"))
+        assertEquals(AntiSpoofOutcome.AUDIO_QUALITY_FAILED, AntiSpoofOutcome.fromString("AUDIO_QUALITY_FAILED"))
+        assertEquals(AntiSpoofOutcome.MODEL_UNAVAILABLE, AntiSpoofOutcome.fromString("MODEL_UNAVAILABLE"))
+        assertEquals(AntiSpoofOutcome.INCONCLUSIVE, AntiSpoofOutcome.fromString("UNKNOWN_SPOOF_CAT"))
+    }
+
+    @Test
+    fun analyzeSpoofSample_successUpdatesUiState() = runTest {
+        advanceUntilIdle()
+        val dummyFile = File.createTempFile("spoof_test_", ".wav")
+        viewModel.setRecordedAudio(dummyFile)
+
+        viewModel.analyzeSpoofSample()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isAnalyzingSpoof)
+        assertNotNull(viewModel.uiState.value.antiSpoofResult)
+        assertEquals(AntiSpoofOutcome.NO_SPOOF_SIGNAL_DETECTED, viewModel.uiState.value.antiSpoofResult?.resultCategory)
+        assertEquals(0.08f, viewModel.uiState.value.antiSpoofResult?.spoofScore)
+        assertFalse(viewModel.uiState.value.antiSpoofResult?.replayDetectionSupported ?: true)
+        dummyFile.delete()
+    }
+
+    @Test
+    fun analyzeSpoofSample_suspectedSpoofOutcome() = runTest {
+        advanceUntilIdle()
+        fakeVoiceRepo.simulatedSpoofOutcome = AntiSpoofOutcome.SPOOF_SUSPECTED
+        fakeVoiceRepo.simulatedSpoofScore = 0.94f
+
+        val dummyFile = File.createTempFile("spoof_suspected_", ".wav")
+        viewModel.setRecordedAudio(dummyFile)
+
+        viewModel.analyzeSpoofSample()
+        advanceUntilIdle()
+
+        assertEquals(AntiSpoofOutcome.SPOOF_SUSPECTED, viewModel.uiState.value.antiSpoofResult?.resultCategory)
+        assertEquals(0.94f, viewModel.uiState.value.antiSpoofResult?.spoofScore)
+        dummyFile.delete()
+    }
+
+    @Test
+    fun verifyVoiceWithAntiSpoof_runsBothIndependently() = runTest {
+        advanceUntilIdle()
+        fakeVoiceRepo.simulatedOutcome = VerificationOutcome.VOICE_MATCHED
+        fakeVoiceRepo.simulatedSimilarity = 0.91f
+        fakeVoiceRepo.simulatedSpoofOutcome = AntiSpoofOutcome.SPOOF_SUSPECTED
+        fakeVoiceRepo.simulatedSpoofScore = 0.88f
+
+        val dummyFile = File.createTempFile("dual_test_", ".wav")
+        viewModel.setRecordedAudio(dummyFile)
+
+        viewModel.verifyVoiceWithAntiSpoof()
+        advanceUntilIdle()
+
+        // Verify that speaker similarity is high AND spoof is suspected WITHOUT conflating them
+        assertNotNull(viewModel.uiState.value.verificationResult)
+        assertEquals(VerificationOutcome.VOICE_MATCHED, viewModel.uiState.value.verificationResult?.result)
+        assertEquals(0.91f, viewModel.uiState.value.verificationResult?.similarityScore)
+
+        assertNotNull(viewModel.uiState.value.antiSpoofResult)
+        assertEquals(AntiSpoofOutcome.SPOOF_SUSPECTED, viewModel.uiState.value.antiSpoofResult?.resultCategory)
+        assertEquals(0.88f, viewModel.uiState.value.antiSpoofResult?.spoofScore)
+        dummyFile.delete()
+    }
+
+    @Test
+    fun resetVerification_clearsBothVerificationAndSpoofResults() = runTest {
+        advanceUntilIdle()
+        val dummyFile = File.createTempFile("reset_test_", ".wav")
+        viewModel.setRecordedAudio(dummyFile)
+
+        viewModel.verifyVoiceWithAntiSpoof()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.uiState.value.verificationResult)
+        assertNotNull(viewModel.uiState.value.antiSpoofResult)
+
+        viewModel.resetVerification()
+
+        assertNull(viewModel.uiState.value.verificationResult)
+        assertNull(viewModel.uiState.value.antiSpoofResult)
+        assertFalse(viewModel.uiState.value.hasRecordedSample)
     }
 }

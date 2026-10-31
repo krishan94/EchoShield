@@ -1,5 +1,6 @@
 package com.echoshield.domain.repository
 
+import com.echoshield.domain.model.AntiSpoofAnalysisResult
 import com.echoshield.domain.model.VerificationHistoryRecord
 import com.echoshield.domain.model.VoiceConsentRecord
 import com.echoshield.domain.model.VoiceEnrollmentResult
@@ -18,7 +19,7 @@ interface VoiceRepository {
     suspend fun deleteVoiceProfile(): Result<Unit>
 
     suspend fun verifyVoiceSample(memberId: String, audioFile: File): Result<VoiceVerificationResult>
+    suspend fun analyzeSpoofSample(audioFile: File, requestId: String? = null): Result<AntiSpoofAnalysisResult>
     suspend fun getVerificationHistory(): Result<List<VerificationHistoryRecord>>
     suspend fun clearVerificationHistory(): Result<Int>
 }
-

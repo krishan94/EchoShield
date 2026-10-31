@@ -29,6 +29,7 @@ interface VoiceRemoteDataSource {
     suspend fun deleteVoiceProfile(): Unit
 
     suspend fun verifyVoice(memberId: String, audioFile: File): com.echoshield.domain.model.VoiceVerificationResult
+    suspend fun analyzeSpoof(audioFile: File, requestId: String? = null): com.echoshield.domain.model.AntiSpoofAnalysisResult
     suspend fun getVerificationHistory(): List<com.echoshield.domain.model.VerificationHistoryRecord>
     suspend fun clearVerificationHistory(): Int
 }
@@ -395,6 +396,86 @@ class VoiceRemoteDataSourceImpl(
                 modelVersion = json.optString("model_version", "voxceleb-v1.1"),
                 explanation = json.optString("explanation", ""),
                 verifiedAt = json.optString("verified_at", "")
+            )
+        }
+    }
+
+    override suspend fun analyzeSpoof(
+        audioFile: File,
+        requestId: String?
+    ): com.echoshield.domain.model.AntiSpoofAnalysisResult = withContext(Dispatchers.IO) {
+        val token = getAuthHeader()
+            ?: throw IllegalStateException("User authentication required for anti-spoofing analysis.")
+
+        val bodyBuilder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "audio_file",
+                audioFile.name,
+                audioFile.asRequestBody(wavMediaType)
+            )
+
+        if (requestId != null) {
+            bodyBuilder.addFormDataPart("request_id", requestId)
+        }
+
+        val request = Request.Builder()
+            .url("$baseUrl/api/v1/voice/analyze-spoof")
+            .addHeader("Authorization", "Bearer $token")
+            .post(bodyBuilder.build())
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            val bodyString = response.body?.string() ?: "{}"
+            if (!response.isSuccessful) {
+                val err = parseErrorDetail(bodyString)
+                throw IOException(err)
+            }
+
+            val json = JSONObject(bodyString)
+            val spoofScore = if (json.isNull("spoof_score")) null else json.getDouble("spoof_score").toFloat()
+            val confScore = if (json.isNull("confidence_score")) null else json.getDouble("confidence_score").toFloat()
+
+            val qualityObj = json.getJSONObject("audio_quality")
+            val quality = com.echoshield.domain.model.AntiSpoofAudioQuality(
+                durationSeconds = qualityObj.optDouble("duration_seconds", 0.0).toFloat(),
+                sampleRate = qualityObj.optInt("sample_rate", 16000),
+                channels = qualityObj.optInt("channels", 1),
+                rmsEnergy = qualityObj.optDouble("rms_energy", 0.0).toFloat(),
+                snrDb = qualityObj.optDouble("snr_db", 0.0).toFloat(),
+                clippingRatio = qualityObj.optDouble("clipping_ratio", 0.0).toFloat(),
+                silenceRatio = qualityObj.optDouble("silence_ratio", 0.0).toFloat(),
+                statusLabel = qualityObj.optString("status_label", "UNKNOWN"),
+                errorMessage = if (qualityObj.isNull("error_message")) null else qualityObj.optString("error_message")
+            )
+
+            val rawMap = mutableMapOf<String, Float>()
+            val rawObj = json.optJSONObject("raw_scores")
+            if (rawObj != null) {
+                val keys = rawObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    rawMap[k] = rawObj.getDouble(k).toFloat()
+                }
+            }
+
+            return@withContext com.echoshield.domain.model.AntiSpoofAnalysisResult(
+                analysisId = json.getString("analysis_id"),
+                requestId = if (json.isNull("request_id")) null else json.optString("request_id"),
+                resultCategory = com.echoshield.domain.model.AntiSpoofOutcome.fromString(json.getString("result_category")),
+                spoofScore = spoofScore,
+                confidenceScore = confScore,
+                rawScores = rawMap,
+                scoreInterpretation = json.optString("score_interpretation", ""),
+                modelName = json.optString("model_name", "mo-thecreator/Deepfake-audio-detection (Wav2Vec2)"),
+                modelVersion = json.optString("model_version", "v1.0-hf"),
+                audioQuality = quality,
+                timestamp = json.optString("timestamp", ""),
+                explanation = json.optString("explanation", ""),
+                isExperimental = json.optBoolean("is_experimental", true),
+                replayDetectionSupported = json.optBoolean("replay_detection_supported", false),
+                replayLimitationNotice = json.optString("replay_limitation_notice", ""),
+                disclaimer = json.optString("disclaimer", "")
             )
         }
     }

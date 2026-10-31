@@ -69,3 +69,4 @@ class IncompatibleEmbeddingError(SpeakerRecognitionError):
 
     def __init__(self, message: str = "Embedding dimension or format mismatch"):
         super().__init__(message, code="INCOMPATIBLE_EMBEDDING")
+

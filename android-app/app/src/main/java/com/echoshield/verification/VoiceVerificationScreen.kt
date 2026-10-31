@@ -78,6 +78,8 @@ import com.echoshield.core.components.EchoTopAppBar
 import com.echoshield.domain.model.FamilyMember
 import com.echoshield.domain.model.VerificationOutcome
 import com.echoshield.domain.model.VoiceVerificationResult
+import com.echoshield.domain.model.AntiSpoofOutcome
+import com.echoshield.domain.model.AntiSpoofAnalysisResult
 import com.echoshield.theme.AccentBlue
 import com.echoshield.theme.DangerRed
 import com.echoshield.theme.InconclusiveGray
@@ -231,15 +233,16 @@ fun VoiceVerificationScreen(
 
             // 3. Main State Content Area: Result vs Verifying vs Studio
             when {
-                uiState.isVerifying -> {
+                uiState.isVerifying || uiState.isAnalyzingSpoof -> {
                     // AI Inference Loading Radar
                     VerificationLoadingCard()
                 }
 
-                uiState.verificationResult != null -> {
-                    // Result View
-                    VerificationResultCard(
-                        result = uiState.verificationResult!!,
+                uiState.verificationResult != null || uiState.antiSpoofResult != null -> {
+                    // Dual Result View (Independent Presentation)
+                    CombinedResultsView(
+                        verificationResult = uiState.verificationResult,
+                        antiSpoofResult = uiState.antiSpoofResult,
                         selectedMember = uiState.selectedMember,
                         onVerifyAnother = { viewModel.resetVerification() }
                     )
@@ -284,6 +287,14 @@ fun VoiceVerificationScreen(
                         onVerifySample = {
                             playbackManager.stop()
                             viewModel.verifyVoiceSample()
+                        },
+                        onAnalyzeSpoof = {
+                            playbackManager.stop()
+                            viewModel.analyzeSpoofSample()
+                        },
+                        onVerifyBoth = {
+                            playbackManager.stop()
+                            viewModel.verifyVoiceWithAntiSpoof()
                         }
                     )
                 }
@@ -468,7 +479,9 @@ private fun RecordingStudioCard(
     onPlayReview: () -> Unit,
     onStopReview: () -> Unit,
     onResetSample: () -> Unit,
-    onVerifySample: () -> Unit
+    onVerifySample: () -> Unit,
+    onAnalyzeSpoof: () -> Unit,
+    onVerifyBoth: () -> Unit
 ) {
     EchoCard(padding = 20.dp) {
         Column(
@@ -642,12 +655,33 @@ private fun RecordingStudioCard(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
+                // Primary Action: Dual Defense Verification
                 EchoPrimaryButton(
-                    text = "Verify Voice Identity",
-                    onClick = onVerifySample,
+                    text = "Verify Identity & Deepfake",
+                    onClick = onVerifyBoth,
                     leadingIcon = Icons.Default.Security,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    EchoSecondaryButton(
+                        text = "Deepfake Only",
+                        onClick = onAnalyzeSpoof,
+                        leadingIcon = Icons.Default.GraphicEq,
+                        modifier = Modifier.weight(1f)
+                    )
+                    EchoOutlinedButton(
+                        text = "Identity Only",
+                        onClick = onVerifySample,
+                        leadingIcon = Icons.Default.Person,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -657,7 +691,7 @@ private fun RecordingStudioCard(
 private fun VerificationResultCard(
     result: VoiceVerificationResult,
     selectedMember: FamilyMember?,
-    onVerifyAnother: () -> Unit
+    onVerifyAnother: (() -> Unit)? = null
 ) {
     val (badgeColor, badgeIcon, titleText, subtitleText) = when (result.result) {
         VerificationOutcome.VOICE_MATCHED -> Tuple4(
@@ -846,12 +880,14 @@ private fun VerificationResultCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            EchoPrimaryButton(
-                text = "Verify Another Sample",
-                onClick = onVerifyAnother,
-                leadingIcon = Icons.Default.Refresh,
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (onVerifyAnother != null) {
+                EchoPrimaryButton(
+                    text = "Verify Another Sample",
+                    onClick = onVerifyAnother,
+                    leadingIcon = Icons.Default.Refresh,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
@@ -863,3 +899,320 @@ private fun formatTimer(seconds: Int): String {
 }
 
 private data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+
+@Composable
+private fun CombinedResultsView(
+    verificationResult: VoiceVerificationResult?,
+    antiSpoofResult: AntiSpoofAnalysisResult?,
+    selectedMember: FamilyMember?,
+    onVerifyAnother: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Independence Safeguard Banner
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(AccentBlue.copy(alpha = 0.12f))
+                .border(1.dp, AccentBlue.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                .padding(14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = AccentBlue,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Independent AI Security Assessments",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = AccentBlue
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Speaker similarity (identity verification) and anti-spoofing (deepfake detection) answer separate questions. High speaker similarity does NOT prove the audio is genuine. Synthetic voice clones can mimic acoustic identity while exhibiting vocoder artifacts.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Card 1: Phase 5 Speaker Identity Verification
+        if (verificationResult != null) {
+            VerificationResultCard(
+                result = verificationResult,
+                selectedMember = selectedMember,
+                onVerifyAnother = if (antiSpoofResult == null) onVerifyAnother else null
+            )
+        }
+
+        if (verificationResult != null && antiSpoofResult != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Card 2: Phase 6 AI Anti-Spoofing & Deepfake Detection
+        if (antiSpoofResult != null) {
+            AntiSpoofResultCard(
+                result = antiSpoofResult,
+                onVerifyAnother = onVerifyAnother
+            )
+        }
+    }
+}
+
+@Composable
+private fun AntiSpoofResultCard(
+    result: AntiSpoofAnalysisResult,
+    onVerifyAnother: (() -> Unit)? = null
+) {
+    val (badgeColor, badgeIcon, titleText, subtitleText) = when (result.resultCategory) {
+        AntiSpoofOutcome.SPOOF_SUSPECTED -> Tuple4(
+            DangerRed,
+            Icons.Default.Warning,
+            "Spoof Suspected",
+            "Acoustic indicators suggest AI speech synthesis or voice conversion"
+        )
+        AntiSpoofOutcome.NO_SPOOF_SIGNAL_DETECTED -> Tuple4(
+            SuccessGreen,
+            Icons.Default.CheckCircle,
+            "No Spoof Signal Detected",
+            "Absence of synthetic vocoder cues under current criteria (does NOT prove authentic)"
+        )
+        AntiSpoofOutcome.INCONCLUSIVE -> Tuple4(
+            WarningAmber,
+            Icons.Default.HelpOutline,
+            "Inconclusive Result",
+            result.scoreInterpretation
+        )
+        AntiSpoofOutcome.AUDIO_QUALITY_FAILED -> Tuple4(
+            WarningAmber,
+            Icons.Default.GraphicEq,
+            "Audio Quality Failed",
+            result.audioQuality.errorMessage ?: "Audio did not satisfy acoustic requirements"
+        )
+        AntiSpoofOutcome.MODEL_UNAVAILABLE -> Tuple4(
+            InconclusiveGray,
+            Icons.Default.Info,
+            "Detector Unavailable",
+            "Anti-spoofing engine is currently offline or unreachable"
+        )
+    }
+
+    EchoCard(padding = 20.dp) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Header Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(badgeColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = badgeIcon,
+                        contentDescription = null,
+                        tint = badgeColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Anti-Spoofing & Deepfake Detection",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = PrimaryTeal
+                    )
+                    Text(
+                        text = titleText,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = badgeColor
+                    )
+                }
+                if (result.isExperimental) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(WarningAmber.copy(alpha = 0.2f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "EXPERIMENTAL",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                            color = WarningAmber
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = subtitleText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Spoof Probability Metric
+            if (result.spoofScore != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.7f))
+                        .padding(14.dp)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Synthetic Risk Probability:",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "${(result.spoofScore * 100).toInt()}%",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = badgeColor
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val progress = result.spoofScore.coerceIn(0f, 1f)
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = badgeColor,
+                            trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Clean floor: < 35%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Suspicion ceiling: ≥ 65%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = DangerRed
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Explanation
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    text = result.explanation,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // Replay Limitation Warning Box
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(InconclusiveGray.copy(alpha = 0.12f))
+                    .padding(10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = result.replayLimitationNotice,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Metadata footer
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Acoustic Detector:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = result.modelName,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Sample Duration / SNR:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${result.audioQuality.durationSeconds}s • ${result.audioQuality.snrDb} dB SNR",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            if (onVerifyAnother != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                EchoPrimaryButton(
+                    text = "Verify Another Sample",
+                    onClick = onVerifyAnother,
+                    leadingIcon = Icons.Default.Refresh,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+    }
+}

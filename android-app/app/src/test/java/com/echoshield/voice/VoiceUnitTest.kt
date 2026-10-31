@@ -128,6 +128,41 @@ class FakeVoiceRepository : VoiceRepository {
         return Result.success(result)
     }
 
+    override suspend fun analyzeSpoofSample(
+        audioFile: File,
+        requestId: String?
+    ): Result<com.echoshield.domain.model.AntiSpoofAnalysisResult> {
+        if (shouldFailNetwork) return Result.failure(Exception("Network unreachable"))
+        val result = com.echoshield.domain.model.AntiSpoofAnalysisResult(
+            analysisId = "spf_fake_test",
+            requestId = requestId,
+            resultCategory = com.echoshield.domain.model.AntiSpoofOutcome.NO_SPOOF_SIGNAL_DETECTED,
+            spoofScore = 0.05f,
+            confidenceScore = 0.95f,
+            rawScores = mapOf("fake_probability" to 0.05f, "real_probability" to 0.95f),
+            scoreInterpretation = "No spoof signatures detected",
+            modelName = "mo-thecreator/Deepfake-audio-detection (Wav2Vec2)",
+            modelVersion = "v1.0-hf",
+            audioQuality = com.echoshield.domain.model.AntiSpoofAudioQuality(
+                durationSeconds = 3.5f,
+                sampleRate = 16000,
+                channels = 1,
+                rmsEnergy = 0.04f,
+                snrDb = 20.0f,
+                clippingRatio = 0.0f,
+                silenceRatio = 0.1f,
+                statusLabel = "EXCELLENT"
+            ),
+            timestamp = "2026-11-01T00:00:00Z",
+            explanation = "Sample does not exhibit synthetic speech artifacts.",
+            isExperimental = true,
+            replayDetectionSupported = false,
+            replayLimitationNotice = "Replay notice",
+            disclaimer = "Experimental disclaimer"
+        )
+        return Result.success(result)
+    }
+
     override suspend fun getVerificationHistory(): Result<List<com.echoshield.domain.model.VerificationHistoryRecord>> {
         if (shouldFailNetwork) return Result.failure(Exception("Network unreachable"))
         return Result.success(emptyList())

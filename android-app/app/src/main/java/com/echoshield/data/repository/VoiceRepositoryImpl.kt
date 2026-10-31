@@ -1,9 +1,12 @@
 package com.echoshield.data.repository
 
 import com.echoshield.data.remote.VoiceRemoteDataSource
+import com.echoshield.domain.model.AntiSpoofAnalysisResult
 import com.echoshield.domain.model.VoiceConsentRecord
 import com.echoshield.domain.model.VoiceEnrollmentResult
 import com.echoshield.domain.model.VoiceProfileInfo
+import com.echoshield.domain.model.VoiceVerificationResult
+import com.echoshield.domain.model.VerificationHistoryRecord
 import com.echoshield.domain.repository.VoiceRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,23 +74,28 @@ class VoiceRepositoryImpl(
     override suspend fun verifyVoiceSample(
         memberId: String,
         audioFile: File
-    ): Result<com.echoshield.domain.model.VoiceVerificationResult> {
+    ): Result<VoiceVerificationResult> {
         return try {
             val result = remoteDataSource.verifyVoice(memberId, audioFile)
             Result.success(result)
         } catch (e: Exception) {
             Result.failure(e)
-        } finally {
-            // Secure cleanup: purge temporary recording from local device storage
-            try {
-                if (audioFile.exists()) {
-                    audioFile.delete()
-                }
-            } catch (_: Exception) {}
         }
     }
 
-    override suspend fun getVerificationHistory(): Result<List<com.echoshield.domain.model.VerificationHistoryRecord>> {
+    override suspend fun analyzeSpoofSample(
+        audioFile: File,
+        requestId: String?
+    ): Result<AntiSpoofAnalysisResult> {
+        return try {
+            val result = remoteDataSource.analyzeSpoof(audioFile, requestId)
+            Result.success(result)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getVerificationHistory(): Result<List<VerificationHistoryRecord>> {
         return try {
             val history = remoteDataSource.getVerificationHistory()
             Result.success(history)
@@ -105,4 +113,3 @@ class VoiceRepositoryImpl(
         }
     }
 }
-

@@ -67,3 +67,4 @@ class ClearHistoryResponse(BaseModel):
     """
     deleted_count: int
     message: str
+

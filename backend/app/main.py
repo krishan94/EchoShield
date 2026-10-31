@@ -6,6 +6,7 @@ from app.auth.router import router as auth_router
 from app.family.router import router as family_router
 from app.enrollment.router import router as enrollment_router
 from app.speaker.router import router as speaker_router
+from app.antispoof.router import router as antispoof_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -30,6 +31,7 @@ app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(family_router, prefix=settings.API_V1_STR)
 app.include_router(enrollment_router, prefix=settings.API_V1_STR)
 app.include_router(speaker_router, prefix=settings.API_V1_STR)
+app.include_router(antispoof_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health", tags=["System Health"])

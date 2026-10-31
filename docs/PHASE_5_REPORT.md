@@ -285,3 +285,4 @@ Phase 6 will implement **Audio Anti-Spoofing & Deepfake Detection**:
 3. Feature extraction for synthetic artifacts (spectral phase incoherence, vocoder signatures, replay acoustic room impulses).
 4. Calibrated spoof risk score computation ($[0.0, 1.0]$).
 5. Anti-spoofing backend verification endpoints and Android UI indicators.
+

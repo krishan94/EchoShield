@@ -1,7 +1,7 @@
 # EchoShield Phase Tracking & Implementation Roadmap
 
 **Project**: EchoShield  
-**Lifecycle Status**: Phase 05 Completed | Ready for Phase 06  
+**Lifecycle Status**: Phase 06 Completed | Ready for Phase 07  
 **Last Updated**: 2026-11-01  
 
 ---
@@ -16,7 +16,7 @@
 | **03** | **Family Accounts & Member Circles** | Family Group Management, Invites, Member Roles | **COMPLETED** | Complete Family Management System (List, Add with safe search, Tabbed Invitations, Profile & Confirmation Dialog for removal), Firestore schema & rules, 8 FastAPI endpoints, dual-mode remote data source, 17 backend tests + Android unit tests passing, Debug APK assembled. |
 | **04** | **Consent-Based Voice Enrollment** | Informed Consent UI, Non-blocking Audio Recording, Audio Upload | **COMPLETED** | Complete 12-step guided enrollment studio, native 16kHz AudioRecord capture with live mic-driven waveform, acoustic quality validator, SpeechBrain ECAPA-TDNN 192-dim embedding extraction, AES-256-GCM biometric encryption at rest, 5 FastAPI endpoints, 27 backend tests + 41 Android tests passing, Debug APK assembled. |
 | **05** | **Pretrained Speaker Recognition** | SpeechBrain ECAPA-TDNN, Biometric Vector Extraction, Cosine Scorer | **COMPLETED** | Modular speaker recognition service (model loader, audio preprocessor, embedding service, similarity service, calibrated decision engine, verification coordinator), POST /api/v1/voice/verify & history endpoints, Android VoiceVerificationScreen & VerificationHistoryScreen, 44 backend tests + 49 Android tests passing, Debug APK assembled. |
-| **06** | **Audio Anti-Spoofing & Deepfake Detection** | Deepfake Detection Model, Bonafide vs Spoof Classification | *PENDING* | Pretrained anti-spoof inference pipeline, artifact detection (TTS/VC/replay), confidence calibration, benchmark test suite. |
+| **06** | **Audio Anti-Spoofing & Deepfake Detection** | Deepfake Detection Model, Bonafide vs Spoof Classification | **COMPLETED** | Pretrained Wav2Vec2 anti-spoof inference pipeline (mo-thecreator), acoustic preprocessor, 5-category calibrated decision engine, POST /api/v1/voice/analyze-spoof endpoint, Android dual-result verification studio, 64 backend tests + 54 Android tests passing, Debug APK assembled. |
 | **07** | **Real-Time WebRTC Calling & Signalling** | WebRTC Audio Channel, Authenticated WebSocket Signalling | *PENDING* | P2P call signalling protocol, WebRTC audio track setup, In-call dialer/receiver Compose UI, call state machine. |
 | **08** | **Real-Time Remote Verification Pipeline** | Live Stream Tapping, Dual-Engine Fusion, In-Call HUD Alerts | *PENDING* | Non-blocking audio tap from WebRTC track, streaming verification broker, real-time risk classification HUD (Green/Yellow/Red). |
 | **09** | **Verification History & Detailed Reports** | Forensic Verification Logging, Threat Breakdown UI | *PENDING* | Firestore verification audit logs, interactive call report screen with acoustic indicators, push alert dispatching for suspicious calls. |

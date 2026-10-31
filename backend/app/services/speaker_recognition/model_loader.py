@@ -107,3 +107,4 @@ class SpeakerModelLoader:
 
 # Global singleton
 model_loader = SpeakerModelLoader()
+
