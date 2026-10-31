@@ -67,9 +67,13 @@ fun SettingsScreen(
     onNavigateToNotifications: () -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToAbout: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    userName: String? = null,
+    userEmail: String? = null
 ) {
     val user = PreviewData.currentUser
+    val displayName = userName?.takeIf { it.isNotBlank() } ?: user.fullName
+    val displayEmail = userEmail?.takeIf { it.isNotBlank() } ?: user.email
     var isDarkMode by remember { mutableStateOf(true) }
     var showLogoutDialog by remember { mutableStateOf(false) }
 
@@ -100,19 +104,19 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     EchoAvatar(
-                        name = user.fullName,
+                        name = displayName,
                         size = 56.dp,
                         isVoiceEnrolled = user.isVoiceEnrolled
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = user.fullName,
+                            text = displayName,
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = user.email,
+                            text = displayEmail,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

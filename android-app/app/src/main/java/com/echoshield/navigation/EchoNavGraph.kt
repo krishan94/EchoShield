@@ -2,11 +2,13 @@ package com.echoshield.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.echoshield.authentication.AuthViewModel
 import com.echoshield.authentication.EmailVerificationScreen
 import com.echoshield.authentication.ForgotPasswordScreen
 import com.echoshield.authentication.LoginScreen
@@ -43,7 +45,8 @@ import com.echoshield.voice.VoiceRecordingStudioScreen
 fun EchoNavGraph(
     navController: NavHostController,
     onOpenDrawer: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
 ) {
     NavHost(
         navController = navController,
@@ -53,11 +56,22 @@ fun EchoNavGraph(
         // --- SCREEN 1: SPLASH ---
         composable(Screen.Splash.route) {
             SplashScreen(
-                onNavigateNext = {
+                onNavigateToDashboard = {
+                    navController.navigate(Screen.HomeDashboard.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+                onNavigateToVerification = {
+                    navController.navigate(Screen.EmailVerification.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                },
+                onNavigateToOnboarding = {
                     navController.navigate(Screen.Onboarding.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
-                }
+                },
+                viewModel = authViewModel
             )
         }
 
@@ -81,16 +95,23 @@ fun EchoNavGraph(
                     }
                 },
                 onNavigateToSignup = { navController.navigate(Screen.Signup.route) },
-                onNavigateToForgotPassword = { navController.navigate(Screen.ForgotPassword.route) }
+                onNavigateToForgotPassword = { navController.navigate(Screen.ForgotPassword.route) },
+                onNavigateToVerification = { navController.navigate(Screen.EmailVerification.route) },
+                viewModel = authViewModel
             )
         }
 
         // --- SCREEN 4: SIGNUP ---
         composable(Screen.Signup.route) {
             SignupScreen(
-                onSignupSuccess = { navController.navigate(Screen.EmailVerification.route) },
+                onSignupSuccess = {
+                    navController.navigate(Screen.EmailVerification.route) {
+                        popUpTo(Screen.Signup.route) { inclusive = true }
+                    }
+                },
                 onNavigateToLogin = { navController.popBackStack() },
-                onNavigateToTerms = { navController.navigate(Screen.PrivacyPolicy.route) }
+                onNavigateToTerms = { navController.navigate(Screen.PrivacyPolicy.route) },
+                viewModel = authViewModel
             )
         }
 
@@ -98,7 +119,7 @@ fun EchoNavGraph(
         composable(Screen.ForgotPassword.route) {
             ForgotPasswordScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onResetRequested = { /* Instructions dispatched */ }
+                viewModel = authViewModel
             )
         }
 
@@ -107,10 +128,15 @@ fun EchoNavGraph(
             EmailVerificationScreen(
                 onVerificationSuccess = {
                     navController.navigate(Screen.HomeDashboard.route) {
-                        popUpTo(Screen.Signup.route) { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 },
-                onNavigateBackToLogin = { navController.navigate(Screen.Login.route) }
+                onNavigateBackToLogin = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                viewModel = authViewModel
             )
         }
 
@@ -323,6 +349,7 @@ fun EchoNavGraph(
 
         // --- SCREEN 26: SETTINGS ---
         composable(Screen.Settings.route) {
+            val user = authViewModel.uiState.value.user
             SettingsScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToEditProfile = { navController.navigate(Screen.EditProfile.route) },
@@ -332,10 +359,14 @@ fun EchoNavGraph(
                 onNavigateToHelp = { navController.navigate(Screen.HelpSupport.route) },
                 onNavigateToAbout = { navController.navigate(Screen.PrivacyPolicy.route) },
                 onLogout = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
+                    authViewModel.logout {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
-                }
+                },
+                userName = user?.displayName,
+                userEmail = user?.email
             )
         }
 

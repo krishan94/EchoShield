@@ -1,6 +1,7 @@
 package com.echoshield.authentication
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Checkbox
@@ -27,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,27 +41,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.echoshield.core.components.EchoGhostButton
 import com.echoshield.core.components.EchoPrimaryButton
 import com.echoshield.core.components.EchoTextField
+import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToSignup: () -> Unit,
-    onNavigateToForgotPassword: () -> Unit
+    onNavigateToForgotPassword: () -> Unit,
+    onNavigateToVerification: () -> Unit = {},
+    viewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
 ) {
-    var email by remember { mutableStateOf("sarah.h@echoshield.family") }
-    var password by remember { mutableStateOf("EchoSecure#2026") }
+    val uiState by viewModel.uiState.collectAsState()
+
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var rememberSession by remember { mutableStateOf(true) }
     var emailError by remember { mutableStateOf<String?>(null) }
     var passwordError by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
 
     fun validateAndSubmit() {
         var isValid = true
-        if (email.isBlank() || !email.contains("@")) {
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isBlank() || !trimmedEmail.contains("@")) {
             emailError = "Please enter a valid family account email"
             isValid = false
         } else {
@@ -73,8 +82,13 @@ fun LoginScreen(
         }
 
         if (isValid) {
-            isLoading = true
-            onLoginSuccess()
+            viewModel.clearErrorMessage()
+            viewModel.login(
+                email = trimmedEmail,
+                password = password,
+                onSuccess = onLoginSuccess,
+                onUnverifiedEmail = onNavigateToVerification
+            )
         }
     }
 
@@ -120,7 +134,35 @@ fun LoginScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(36.dp))
+        Spacer(modifier = Modifier.height(28.dp))
+
+        // Error message banner
+        if (uiState.errorMessage != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(DangerRed.copy(alpha = 0.12f))
+                    .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .padding(14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = "Error",
+                        tint = DangerRed,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = uiState.errorMessage ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = DangerRed
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+        }
 
         // Form Fields
         EchoTextField(
@@ -128,6 +170,7 @@ fun LoginScreen(
             onValueChange = {
                 email = it
                 if (emailError != null) emailError = null
+                if (uiState.errorMessage != null) viewModel.clearErrorMessage()
             },
             label = "Account Email",
             placeholder = "name@family.com",
@@ -143,6 +186,7 @@ fun LoginScreen(
             onValueChange = {
                 password = it
                 if (passwordError != null) passwordError = null
+                if (uiState.errorMessage != null) viewModel.clearErrorMessage()
             },
             label = "Master Password",
             placeholder = "••••••••••••",
@@ -192,7 +236,7 @@ fun LoginScreen(
         EchoPrimaryButton(
             text = "Authenticate & Access Shield",
             onClick = { validateAndSubmit() },
-            isLoading = isLoading
+            isLoading = uiState.isLoading
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -219,4 +263,3 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(32.dp))
     }
 }
-

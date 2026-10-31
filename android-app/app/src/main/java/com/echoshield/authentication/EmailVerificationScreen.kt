@@ -1,51 +1,58 @@
 package com.echoshield.authentication
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.echoshield.core.components.EchoGhostButton
 import com.echoshield.core.components.EchoOutlinedButton
 import com.echoshield.core.components.EchoPrimaryButton
 import com.echoshield.core.components.EchoTopAppBar
 import com.echoshield.theme.AccentBlue
+import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
+import com.echoshield.theme.SuccessGreen
 
 @Composable
 fun EmailVerificationScreen(
     userEmail: String = "sarah.h@echoshield.family",
     onVerificationSuccess: () -> Unit,
-    onNavigateBackToLogin: () -> Unit
+    onNavigateBackToLogin: () -> Unit,
+    viewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
 ) {
-    var isResending by remember { mutableStateOf(false) }
-    var isChecking by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf("Waiting for email confirmation...") }
+    val uiState by viewModel.uiState.collectAsState()
+    val displayEmail = uiState.user?.email?.takeIf { it.isNotBlank() } ?: userEmail
 
     Column(
         modifier = Modifier
@@ -55,7 +62,9 @@ fun EmailVerificationScreen(
         EchoTopAppBar(
             title = "Verify Identity",
             subtitle = "Email Confirmation",
-            onNavigateBack = onNavigateBackToLogin
+            onNavigateBack = {
+                viewModel.logout { onNavigateBackToLogin() }
+            }
         )
 
         Column(
@@ -101,7 +110,7 @@ fun EmailVerificationScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = userEmail,
+                text = displayEmail,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = PrimaryTeal,
                 textAlign = TextAlign.Center
@@ -116,16 +125,72 @@ fun EmailVerificationScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Check Status Button
+            // Error banner (e.g. user clicked refresh but not yet verified in Firebase)
+            if (uiState.errorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DangerRed.copy(alpha = 0.12f))
+                        .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = "Error",
+                            tint = DangerRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DangerRed
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Success banner (e.g. link resent or verified)
+            if (uiState.successMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SuccessGreen.copy(alpha = 0.12f))
+                        .border(1.dp, SuccessGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Success",
+                            tint = SuccessGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = uiState.successMessage ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SuccessGreen
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Check Status Button (Actual Firebase check)
             EchoPrimaryButton(
                 text = "I Have Confirmed My Email",
                 onClick = {
-                    isChecking = true
-                    onVerificationSuccess()
+                    viewModel.clearErrorMessage()
+                    viewModel.checkEmailVerification(onVerified = onVerificationSuccess)
                 },
-                isLoading = isChecking,
+                isLoading = uiState.isLoading,
                 leadingIcon = Icons.Default.Refresh
             )
 
@@ -133,30 +198,23 @@ fun EmailVerificationScreen(
 
             // Resend Email Button
             EchoOutlinedButton(
-                text = if (isResending) "Transmitting Token..." else "Resend Verification Email",
+                text = "Resend Verification Email",
                 onClick = {
-                    isResending = true
-                    statusMessage = "A fresh verification link has been sent."
+                    viewModel.clearErrorMessage()
+                    viewModel.sendEmailVerification()
                 },
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = statusMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             EchoGhostButton(
                 text = "Sign in with another account",
-                onClick = onNavigateBackToLogin,
+                onClick = {
+                    viewModel.logout { onNavigateBackToLogin() }
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
-

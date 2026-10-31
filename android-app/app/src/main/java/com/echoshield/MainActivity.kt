@@ -13,15 +13,16 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.echoshield.core.components.BottomNavItem
+import com.echoshield.authentication.AuthViewModel
 import com.echoshield.core.components.EchoBottomNavigation
 import com.echoshield.core.components.EchoNavigationDrawerContent
 import com.echoshield.navigation.EchoNavGraph
@@ -41,10 +42,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun EchoShieldApp() {
+fun EchoShieldApp(
+    authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
+) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
+    val authUiState by authViewModel.uiState.collectAsState()
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Splash.route
@@ -65,6 +69,8 @@ fun EchoShieldApp() {
         drawerContent = {
             EchoNavigationDrawerContent(
                 currentRoute = currentRoute,
+                userName = authUiState.user?.displayName?.takeIf { it.isNotBlank() } ?: "Family Guardian",
+                userEmail = authUiState.user?.email?.takeIf { it.isNotBlank() } ?: "family@echoshield.io",
                 onNavigate = { route ->
                     coroutineScope.launch { drawerState.close() }
                     navController.navigate(route) {
@@ -73,8 +79,10 @@ fun EchoShieldApp() {
                 },
                 onLogout = {
                     coroutineScope.launch { drawerState.close() }
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
+                    authViewModel.logout {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
                     }
                 }
             )
@@ -112,10 +120,10 @@ fun EchoShieldApp() {
                     navController = navController,
                     onOpenDrawer = {
                         coroutineScope.launch { drawerState.open() }
-                    }
+                    },
+                    authViewModel = authViewModel
                 )
             }
         }
     }
 }
-

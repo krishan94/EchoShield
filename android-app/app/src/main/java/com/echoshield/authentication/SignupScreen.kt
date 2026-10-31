@@ -1,8 +1,10 @@
 package com.echoshield.authentication
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,28 +12,35 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.echoshield.core.components.EchoGhostButton
 import com.echoshield.core.components.EchoPrimaryButton
 import com.echoshield.core.components.EchoTextField
@@ -43,8 +52,11 @@ import com.echoshield.theme.PrimaryTeal
 fun SignupScreen(
     onSignupSuccess: () -> Unit,
     onNavigateToLogin: () -> Unit,
-    onNavigateToTerms: () -> Unit
+    onNavigateToTerms: () -> Unit,
+    viewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
 ) {
+    val uiState by viewModel.uiState.collectAsState()
+
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -56,7 +68,6 @@ fun SignupScreen(
     var passwordError by remember { mutableStateOf<String?>(null) }
     var confirmError by remember { mutableStateOf<String?>(null) }
     var termsError by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
 
     fun validateAndSubmit() {
         var valid = true
@@ -87,8 +98,15 @@ fun SignupScreen(
         } else termsError = null
 
         if (valid) {
-            isLoading = true
-            onSignupSuccess()
+            viewModel.clearErrorMessage()
+            viewModel.signup(
+                name = fullName,
+                email = email,
+                password = password,
+                confirmPassword = confirmPassword,
+                termsAccepted = termsAccepted,
+                onSuccess = onSignupSuccess
+            )
         }
     }
 
@@ -121,13 +139,42 @@ fun SignupScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Global error banner
+            if (uiState.errorMessage != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DangerRed.copy(alpha = 0.12f))
+                        .border(1.dp, DangerRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = "Error",
+                            tint = DangerRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DangerRed
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(18.dp))
+            }
 
             EchoTextField(
                 value = fullName,
                 onValueChange = {
                     fullName = it
                     if (nameError != null) nameError = null
+                    if (uiState.errorMessage != null) viewModel.clearErrorMessage()
                 },
                 label = "Full Name",
                 placeholder = "Sarah Henderson",
@@ -142,6 +189,7 @@ fun SignupScreen(
                 onValueChange = {
                     email = it
                     if (emailError != null) emailError = null
+                    if (uiState.errorMessage != null) viewModel.clearErrorMessage()
                 },
                 label = "Email Address",
                 placeholder = "sarah.h@echoshield.family",
@@ -157,6 +205,7 @@ fun SignupScreen(
                 onValueChange = {
                     password = it
                     if (passwordError != null) passwordError = null
+                    if (uiState.errorMessage != null) viewModel.clearErrorMessage()
                 },
                 label = "Master Password",
                 placeholder = "Minimum 8 characters",
@@ -173,6 +222,7 @@ fun SignupScreen(
                 onValueChange = {
                     confirmPassword = it
                     if (confirmError != null) confirmError = null
+                    if (uiState.errorMessage != null) viewModel.clearErrorMessage()
                 },
                 label = "Confirm Master Password",
                 placeholder = "Re-enter password",
@@ -189,7 +239,10 @@ fun SignupScreen(
                 verticalAlignment = Alignment.Top,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { termsAccepted = !termsAccepted }
+                    .clickable {
+                        termsAccepted = !termsAccepted
+                        if (termsError != null) termsError = null
+                    }
             ) {
                 Checkbox(
                     checked = termsAccepted,
@@ -231,7 +284,7 @@ fun SignupScreen(
             EchoPrimaryButton(
                 text = "Create Family Circle",
                 onClick = { validateAndSubmit() },
-                isLoading = isLoading
+                isLoading = uiState.isLoading
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -258,4 +311,3 @@ fun SignupScreen(
         }
     }
 }
-
