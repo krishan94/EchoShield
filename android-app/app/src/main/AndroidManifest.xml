@@ -14,8 +14,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
 
-    <!-- Notifications for Security Alerts -->
+    <!-- Notifications & Full-Screen Calling for Security Alerts -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:name=".EchoShieldApplication"
@@ -37,6 +40,27 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Full-Screen Native Incoming Call Activity -->
+        <activity
+            android:name=".calling.IncomingCallActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.EchoShield" />
+
+        <!-- Notification Action BroadcastReceiver for Call Accept / Decline -->
+        <receiver
+            android:name=".calling.notification.CallActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.echoshield.calling.ACTION_ACCEPT_CALL" />
+                <action android:name="com.echoshield.calling.ACTION_DECLINE_CALL" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

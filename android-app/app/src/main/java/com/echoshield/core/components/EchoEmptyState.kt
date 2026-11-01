@@ -34,6 +34,7 @@ fun EchoEmptyState(
     onActionClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -45,13 +46,13 @@ fun EchoEmptyState(
             modifier = Modifier
                 .size(72.dp)
                 .clip(CircleShape)
-                .background(PrimaryTeal.copy(alpha = 0.12f)),
+                .background(primaryColor.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = PrimaryTeal,
+                tint = primaryColor,
                 modifier = Modifier.size(36.dp)
             )
         }

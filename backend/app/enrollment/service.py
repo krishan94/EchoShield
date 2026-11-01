@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, status
-from firebase_admin import firestore
 
+from app.core.firebase import get_firestore_client
 from app.auth.models import AuthenticatedUser
 from app.enrollment.models import (
     ConsentResponse,
@@ -32,24 +32,26 @@ class VoiceEnrollmentService:
     Business logic and Firestore persistence for EchoShield Voice Enrollment.
     Enforces explicit user consent, real audio quality checks, genuine ECAPA-TDNN
     embedding generation, and AES-256-GCM biometric encryption at rest.
+    When in production mode (use_in_memory=False), strictly interacts with Firestore
+    and rejects silent fallback to in-memory dictionaries.
     """
 
     def __init__(self, use_in_memory: bool = False):
         self.use_in_memory = use_in_memory
-        # In-memory stores used for hermetic tests or when Firestore ADC is unconfigured
+        # In-memory stores used strictly for hermetic unit tests
         self._mem_consents: Dict[str, Dict[str, Any]] = {}
         self._mem_profiles: Dict[str, Dict[str, Any]] = {}
         self._mem_users: Dict[str, Dict[str, Any]] = {}
 
     def _get_firestore(self):
+        """
+        Retrieves Firestore client in production.
+        In test mode (use_in_memory=True), returns None.
+        In production mode, raises HTTP 503 if Firestore cannot be reached.
+        """
         if self.use_in_memory:
             return None
-        try:
-            return firestore.client()
-        except Exception as e:
-            logger.warning("Firestore client unavailable, falling back to local service store: %s", str(e))
-            self.use_in_memory = True
-            return None
+        return get_firestore_client()
 
     def record_consent(self, user: AuthenticatedUser, request: VoiceConsentRequest) -> ConsentResponse:
         """
@@ -71,54 +73,63 @@ class VoiceEnrollmentService:
             "updated_at": now_iso
         }
 
+        if self.use_in_memory:
+            self._mem_consents[user.uid] = consent_record
+            user_meta = self._mem_users.setdefault(user.uid, {})
+            user_meta["voice_consent_granted"] = (request.consent_status.lower() == "granted")
+            user_meta["voice_consent_timestamp"] = consent_record["consent_timestamp"]
+            return ConsentResponse(
+                user_id=user.uid,
+                consent_status=consent_record["consent_status"],
+                consent_version=consent_record["consent_version"],
+                consent_timestamp=consent_record["consent_timestamp"],
+                message="Biometric consent recorded successfully."
+            )
+
+        # Production path: Firestore
         db = self._get_firestore()
-        if db:
-            try:
-                db.collection("voice_consents").document(user.uid).set(consent_record)
-                db.collection("users").document(user.uid).set({
-                    "voice_consent_granted": (request.consent_status.lower() == "granted"),
-                    "voice_consent_timestamp": consent_record["consent_timestamp"]
-                }, merge=True)
-                return ConsentResponse(
-                    user_id=user.uid,
-                    consent_status=consent_record["consent_status"],
-                    consent_version=consent_record["consent_version"],
-                    consent_timestamp=consent_record["consent_timestamp"],
-                    message="Biometric consent recorded successfully."
-                )
-            except Exception as e:
-                logger.warning("Firestore consent write error: %s", str(e))
-
-        # In-memory store
-        self._mem_consents[user.uid] = consent_record
-        user_meta = self._mem_users.setdefault(user.uid, {})
-        user_meta["voice_consent_granted"] = (request.consent_status.lower() == "granted")
-        user_meta["voice_consent_timestamp"] = consent_record["consent_timestamp"]
-
-        return ConsentResponse(
-            user_id=user.uid,
-            consent_status=consent_record["consent_status"],
-            consent_version=consent_record["consent_version"],
-            consent_timestamp=consent_record["consent_timestamp"],
-            message="Biometric consent recorded successfully."
-        )
+        try:
+            db.collection("voice_consents").document(user.uid).set(consent_record)
+            db.collection("users").document(user.uid).set({
+                "voice_consent_granted": (request.consent_status.lower() == "granted"),
+                "voice_consent_timestamp": consent_record["consent_timestamp"]
+            }, merge=True)
+            return ConsentResponse(
+                user_id=user.uid,
+                consent_status=consent_record["consent_status"],
+                consent_version=consent_record["consent_version"],
+                consent_timestamp=consent_record["consent_timestamp"],
+                message="Biometric consent recorded successfully."
+            )
+        except Exception as e:
+            logger.error("Firestore consent write error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to record consent in Firestore: {str(e)}"
+            )
 
     def check_consent(self, user_id: str) -> bool:
         """
         Verifies whether the user has an active informed biometric consent record.
         """
-        db = self._get_firestore()
-        if db:
-            try:
-                doc = db.collection("voice_consents").document(user_id).get()
-                if doc.exists:
-                    data = doc.to_dict()
-                    return data.get("consent_status") == "granted"
-            except Exception as e:
-                logger.warning("Firestore consent check error: %s", str(e))
+        if self.use_in_memory:
+            consent = self._mem_consents.get(user_id)
+            return bool(consent and consent.get("consent_status") == "granted")
 
-        consent = self._mem_consents.get(user_id)
-        return bool(consent and consent.get("consent_status") == "granted")
+        # Production path: Firestore
+        db = self._get_firestore()
+        try:
+            doc = db.collection("voice_consents").document(user_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                return data.get("consent_status") == "granted"
+            return False
+        except Exception as e:
+            logger.error("Firestore consent check error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to query consent record from Firestore: {str(e)}"
+            )
 
     def enroll_voice(
         self,
@@ -193,49 +204,51 @@ class VoiceEnrollmentService:
             "updated_at": now_iso
         }
 
-        # 5. Persist profile and update user verification flag
+        # 5. Persist profile
+        if self.use_in_memory:
+            self._mem_profiles[user.uid] = profile_data
+            user_meta = self._mem_users.setdefault(user.uid, {})
+            user_meta["is_voice_enrolled"] = True
+            user_meta["voice_quality_score"] = quality_score
+            return EnrollmentResponse(
+                user_id=user.uid,
+                enrollment_status="enrolled",
+                voice_quality_score=quality_score,
+                sample_count=len(samples_bytes),
+                embedding_model=MODEL_NAME,
+                model_version=MODEL_VERSION,
+                enrolled_at=now_iso,
+                samples_summary=samples_summary,
+                message="Biometric voice signature successfully extracted and encrypted."
+            )
+
+        # Production path: Firestore
         db = self._get_firestore()
-        if db:
-            try:
-                db.collection("voice_profiles").document(user.uid).set(profile_data)
-                db.collection("users").document(user.uid).set({
-                    "is_voice_enrolled": True,
-                    "voice_quality_score": quality_score,
-                    "voice_enrolled_at": now_iso
-                }, merge=True)
+        try:
+            db.collection("voice_profiles").document(user.uid).set(profile_data)
+            db.collection("users").document(user.uid).set({
+                "is_voice_enrolled": True,
+                "voice_quality_score": quality_score,
+                "voice_enrolled_at": now_iso
+            }, merge=True)
 
-                return EnrollmentResponse(
-                    user_id=user.uid,
-                    enrollment_status="enrolled",
-                    voice_quality_score=quality_score,
-                    sample_count=len(samples_bytes),
-                    embedding_model=MODEL_NAME,
-                    model_version=MODEL_VERSION,
-                    enrolled_at=now_iso,
-                    samples_summary=samples_summary,
-                    message="Biometric voice signature successfully extracted and encrypted."
-                )
-            except Exception as e:
-                logger.warning("Firestore profile write error: %s", str(e))
-
-        # In-memory store
-        self._mem_profiles[user.uid] = profile_data
-        user_meta = self._mem_users.setdefault(user.uid, {})
-        user_meta["is_voice_enrolled"] = True
-        user_meta["voice_quality_score"] = quality_score
-        user_meta["voice_enrolled_at"] = now_iso
-
-        return EnrollmentResponse(
-            user_id=user.uid,
-            enrollment_status="enrolled",
-            voice_quality_score=quality_score,
-            sample_count=len(samples_bytes),
-            embedding_model=MODEL_NAME,
-            model_version=MODEL_VERSION,
-            enrolled_at=now_iso,
-            samples_summary=samples_summary,
-            message="Biometric voice signature successfully extracted and encrypted."
-        )
+            return EnrollmentResponse(
+                user_id=user.uid,
+                enrollment_status="enrolled",
+                voice_quality_score=quality_score,
+                sample_count=len(samples_bytes),
+                embedding_model=MODEL_NAME,
+                model_version=MODEL_VERSION,
+                enrolled_at=now_iso,
+                samples_summary=samples_summary,
+                message="Biometric voice signature successfully extracted and encrypted."
+            )
+        except Exception as e:
+            logger.error("Firestore profile write error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to persist voice profile in Firestore: {str(e)}"
+            )
 
     def get_voice_profile(self, user: AuthenticatedUser) -> VoiceProfileResponse:
         """
@@ -243,49 +256,76 @@ class VoiceEnrollmentService:
         Never exposes raw embeddings or cryptographic keys.
         """
         now_iso = datetime.now(timezone.utc).isoformat()
-        db = self._get_firestore()
-        profile_data: Optional[Dict[str, Any]] = None
         consent_status = "granted" if self.check_consent(user.uid) else "pending"
 
-        if db:
-            try:
-                doc = db.collection("voice_profiles").document(user.uid).get()
-                if doc.exists:
-                    profile_data = doc.to_dict()
-            except Exception as e:
-                logger.warning("Firestore get profile error: %s", str(e))
-
-        if not profile_data:
+        if self.use_in_memory:
             profile_data = self._mem_profiles.get(user.uid)
-
-        if not profile_data:
+            if not profile_data:
+                return VoiceProfileResponse(
+                    user_id=user.uid,
+                    enrollment_status="not_enrolled",
+                    is_voice_enrolled=False,
+                    voice_quality_score=0.0,
+                    sample_count=0,
+                    embedding_model=MODEL_NAME,
+                    model_version=MODEL_VERSION,
+                    consent_status=consent_status,
+                    consent_version="1.0",
+                    enrolled_at=None,
+                    updated_at=now_iso
+                )
             return VoiceProfileResponse(
                 user_id=user.uid,
-                enrollment_status="not_enrolled",
-                is_voice_enrolled=False,
-                voice_quality_score=0.0,
-                sample_count=0,
-                embedding_model=MODEL_NAME,
-                model_version=MODEL_VERSION,
+                enrollment_status=profile_data.get("enrollment_status", "enrolled"),
+                is_voice_enrolled=profile_data.get("is_voice_enrolled", True),
+                voice_quality_score=float(profile_data.get("voice_quality_score", 0.0)),
+                sample_count=int(profile_data.get("sample_count", 3)),
+                embedding_model=profile_data.get("embedding_model", MODEL_NAME),
+                model_version=profile_data.get("model_version", MODEL_VERSION),
                 consent_status=consent_status,
                 consent_version="1.0",
-                enrolled_at=None,
-                updated_at=now_iso
+                enrolled_at=profile_data.get("enrolled_at"),
+                updated_at=profile_data.get("updated_at", now_iso)
             )
 
-        return VoiceProfileResponse(
-            user_id=user.uid,
-            enrollment_status=profile_data.get("enrollment_status", "enrolled"),
-            is_voice_enrolled=profile_data.get("is_voice_enrolled", True),
-            voice_quality_score=float(profile_data.get("voice_quality_score", 0.0)),
-            sample_count=int(profile_data.get("sample_count", 3)),
-            embedding_model=profile_data.get("embedding_model", MODEL_NAME),
-            model_version=profile_data.get("model_version", MODEL_VERSION),
-            consent_status=consent_status,
-            consent_version="1.0",
-            enrolled_at=profile_data.get("enrolled_at"),
-            updated_at=profile_data.get("updated_at", now_iso)
-        )
+        # Production path: Firestore
+        db = self._get_firestore()
+        try:
+            doc = db.collection("voice_profiles").document(user.uid).get()
+            if not doc.exists:
+                return VoiceProfileResponse(
+                    user_id=user.uid,
+                    enrollment_status="not_enrolled",
+                    is_voice_enrolled=False,
+                    voice_quality_score=0.0,
+                    sample_count=0,
+                    embedding_model=MODEL_NAME,
+                    model_version=MODEL_VERSION,
+                    consent_status=consent_status,
+                    consent_version="1.0",
+                    enrolled_at=None,
+                    updated_at=now_iso
+                )
+            profile_data = doc.to_dict()
+            return VoiceProfileResponse(
+                user_id=user.uid,
+                enrollment_status=profile_data.get("enrollment_status", "enrolled"),
+                is_voice_enrolled=profile_data.get("is_voice_enrolled", True),
+                voice_quality_score=float(profile_data.get("voice_quality_score", 0.0)),
+                sample_count=int(profile_data.get("sample_count", 3)),
+                embedding_model=profile_data.get("embedding_model", MODEL_NAME),
+                model_version=profile_data.get("model_version", MODEL_VERSION),
+                consent_status=consent_status,
+                consent_version="1.0",
+                enrolled_at=profile_data.get("enrolled_at"),
+                updated_at=profile_data.get("updated_at", now_iso)
+            )
+        except Exception as e:
+            logger.error("Firestore get profile error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to query voice profile from Firestore: {str(e)}"
+            )
 
     def delete_voice_profile(self, user: AuthenticatedUser) -> VoiceProfileDeleteResponse:
         """
@@ -293,40 +333,45 @@ class VoiceEnrollmentService:
         revokes biometric consent, and updates user account enrollment state to false.
         """
         now_iso = datetime.now(timezone.utc).isoformat()
+
+        if self.use_in_memory:
+            self._mem_profiles.pop(user.uid, None)
+            if user.uid in self._mem_consents:
+                self._mem_consents[user.uid]["consent_status"] = "revoked"
+            if user.uid in self._mem_users:
+                self._mem_users[user.uid]["is_voice_enrolled"] = False
+                self._mem_users[user.uid]["voice_quality_score"] = 0.0
+
+            return VoiceProfileDeleteResponse(
+                user_id=user.uid,
+                status="deleted",
+                message="Biometric voice profile and encrypted embeddings purged successfully."
+            )
+
+        # Production path: Firestore
         db = self._get_firestore()
-
-        if db:
-            try:
-                db.collection("voice_profiles").document(user.uid).delete()
-                db.collection("voice_consents").document(user.uid).update({
-                    "consent_status": "revoked",
-                    "updated_at": now_iso
-                })
-                db.collection("users").document(user.uid).set({
-                    "is_voice_enrolled": False,
-                    "voice_quality_score": 0.0,
-                    "voice_enrolled_at": None
-                }, merge=True)
-                return VoiceProfileDeleteResponse(
-                    user_id=user.uid,
-                    status="deleted",
-                    message="Biometric voice profile and encrypted embeddings purged successfully."
-                )
-            except Exception as e:
-                logger.warning("Firestore delete profile error: %s", str(e))
-
-        self._mem_profiles.pop(user.uid, None)
-        if user.uid in self._mem_consents:
-            self._mem_consents[user.uid]["consent_status"] = "revoked"
-        if user.uid in self._mem_users:
-            self._mem_users[user.uid]["is_voice_enrolled"] = False
-            self._mem_users[user.uid]["voice_quality_score"] = 0.0
-
-        return VoiceProfileDeleteResponse(
-            user_id=user.uid,
-            status="deleted",
-            message="Biometric voice profile and encrypted embeddings purged successfully."
-        )
+        try:
+            db.collection("voice_profiles").document(user.uid).delete()
+            db.collection("voice_consents").document(user.uid).update({
+                "consent_status": "revoked",
+                "updated_at": now_iso
+            })
+            db.collection("users").document(user.uid).set({
+                "is_voice_enrolled": False,
+                "voice_quality_score": 0.0,
+                "voice_enrolled_at": None
+            }, merge=True)
+            return VoiceProfileDeleteResponse(
+                user_id=user.uid,
+                status="deleted",
+                message="Biometric voice profile and encrypted embeddings purged successfully."
+            )
+        except Exception as e:
+            logger.error("Firestore delete profile error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to purge voice profile in Firestore: {str(e)}"
+            )
 
 
 # Global service instance

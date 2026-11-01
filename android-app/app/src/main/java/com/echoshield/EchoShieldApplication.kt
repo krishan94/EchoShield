@@ -1,6 +1,7 @@
 package com.echoshield
 
 import android.app.Application
+import com.echoshield.core.di.AppContainer
 import com.google.firebase.FirebaseApp
 
 /**
@@ -13,6 +14,7 @@ class EchoShieldApplication : Application() {
         if (FirebaseApp.getApps(this).isEmpty()) {
             FirebaseApp.initializeApp(this)
         }
+        AppContainer.callSessionCoordinator.initialize(this)
     }
 }
 

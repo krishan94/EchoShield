@@ -3,57 +3,75 @@ package com.echoshield.theme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-// Centralized Brand & Cyber Theme Color Tokens
-val DarkBackground = Color(0xFF0B1220)
-val DarkCard = Color(0xFF111C30)
-val DarkCardElevated = Color(0xFF17253F)
-val DarkSurfaceStroke = Color(0xFF1E2D4A)
+// ============================================================================
+// ECHOSHIELD OFFICIAL COLOR SYSTEM
+// ============================================================================
 
-val LightBackground = Color(0xFFF6F8FC)
-val LightCard = Color(0xFFFFFFFF)
-val LightCardElevated = Color(0xFFF0F3F9)
-val LightSurfaceStroke = Color(0xFFE2E8F0)
+// --- MIDNIGHT TEAL (DARK MODE) ---
+val DarkBackground = Color(0xFF102827)
+val DarkSurface = Color(0xFF19413D)
+val DarkPrimary = Color(0xFF36A69A)
+val DarkSecondary = Color(0xFF8BCBC0)
+val DarkPrimaryText = Color(0xFFF4F7F3)
+val DarkSecondaryText = Color(0xFFB5C9C3)
+val DarkBorder = Color(0xFF31534E)
 
-// Brand Core Accents
-val PrimaryTeal = Color(0xFF22C7A9)
-val PrimaryTealDark = Color(0xFF1AA88E)
-val AccentBlue = Color(0xFF438BFF)
-val AccentBlueDark = Color(0xFF2B70E0)
-val CyberPurple = Color(0xFF8B5CF6)
+// Legacy alias compatibility mapped directly to Midnight Teal Dark
+val DarkCard = DarkSurface
+val DarkCardElevated = Color(0xFF1E4C47)
+val DarkSurfaceStroke = DarkBorder
+val TextPrimaryDark = DarkPrimaryText
+val TextSecondaryDark = DarkSecondaryText
+val TextTertiaryDark = Color(0xFF8DA39D)
 
-// Functional & State Indicators
-val SuccessGreen = Color(0xFF22C55E)
-val WarningAmber = Color(0xFFF59E0B)
-val DangerRed = Color(0xFFEF4444)
-val InconclusiveGray = Color(0xFF64748B)
+// --- WARM IVORY (LIGHT MODE) ---
+val LightBackground = Color(0xFFF5F3EA)
+val LightSurface = Color(0xFFFFFFFF)
+val LightPrimary = Color(0xFF246F68)
+val LightSecondary = Color(0xFF36A69A)
+val LightPrimaryText = Color(0xFF19312F)
+val LightSecondaryText = Color(0xFF647873)
+val LightBorder = Color(0xFFE0E7E1)
 
-// Text & Content Muted Tokens
-val TextPrimaryDark = Color(0xFFF8FAFC)
-val TextSecondaryDark = Color(0xFF94A3B8)
-val TextTertiaryDark = Color(0xFF64748B)
+// Legacy alias compatibility mapped directly to Warm Ivory Light
+val LightCard = LightSurface
+val LightCardElevated = Color(0xFFEDE9DD)
+val LightSurfaceStroke = LightBorder
+val TextPrimaryLight = LightPrimaryText
+val TextSecondaryLight = LightSecondaryText
+val TextTertiaryLight = Color(0xFF8A9C97)
 
-val TextPrimaryLight = Color(0xFF0F172A)
-val TextSecondaryLight = Color(0xFF475569)
-val TextTertiaryLight = Color(0xFF94A3B8)
+// --- BRAND CORE ACCENTS ---
+val PrimaryTeal = DarkPrimary
+val PrimaryTealDark = LightPrimary
+val SecondaryTeal = DarkSecondary
 
-// Dynamic Cyber Gradients
+// --- FUNCTIONAL STATUS INDICATORS ---
+val SuccessGreen = Color(0xFF229B68)
+val WarningAmber = Color(0xFFD99528)
+val DangerRed = Color(0xFFD94F52)
+val InfoBlue = Color(0xFF3189A5)
+val AccentBlue = InfoBlue
+val AccentBlueDark = InfoBlue
+val InconclusiveGray = Color(0xFF8DA39D)
+
+// --- MODERN REFINED GRADIENTS (NO LOUD PURPLE/BLUE NEON) ---
 val CyberTealGradient = Brush.horizontalGradient(
-    colors = listOf(Color(0xFF22C7A9), Color(0xFF438BFF))
+    colors = listOf(DarkPrimary, DarkSecondary)
 )
 
 val CyberShieldGradient = Brush.linearGradient(
-    colors = listOf(Color(0xFF111C30), Color(0xFF17253F), Color(0xFF0F1E38))
+    colors = listOf(Color(0xFF102827), Color(0xFF19413D))
 )
 
 val ThreatAlertGradient = Brush.horizontalGradient(
-    colors = listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+    colors = listOf(Color(0xFFD94F52), Color(0xFFB83A3D))
 )
 
 val SafeVerifiedGradient = Brush.horizontalGradient(
-    colors = listOf(Color(0xFF22C55E), Color(0xFF16A34A))
+    colors = listOf(Color(0xFF229B68), Color(0xFF1A7D53))
 )
 
 val RadarGlowBrush = Brush.radialGradient(
-    colors = listOf(Color(0x6622C7A9), Color(0x1A438BFF), Color.Transparent)
+    colors = listOf(Color(0x5536A69A), Color(0x1536A69A), Color.Transparent)
 )
-

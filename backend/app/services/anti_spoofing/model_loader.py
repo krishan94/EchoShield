@@ -103,3 +103,4 @@ class AntiSpoofModelLoader:
 
 # Global singleton instance
 anti_spoof_model_loader = AntiSpoofModelLoader()
+

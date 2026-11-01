@@ -105,3 +105,4 @@ class SpoofDetectionService:
 
 # Global service instance
 spoof_detection_service = SpoofDetectionService()
+

@@ -8,6 +8,7 @@ import firebase_admin
 from firebase_admin import auth, credentials
 
 from app.core.config import settings
+from app.core.firebase import initialize_firebase_admin
 from app.auth.models import AuthenticatedUser
 
 logger = logging.getLogger("echoshield.auth")
@@ -18,43 +19,11 @@ security_scheme = HTTPBearer(
     description="Pass Firebase JWT ID token obtained via Android Firebase SDK: 'Bearer <token>'"
 )
 
-# Firebase Admin SDK Initialization
-_firebase_initialized = False
-
-
-def initialize_firebase_admin() -> None:
-    """
-    Initializes the Firebase Admin SDK securely.
-    Credentials are loaded from the environment variable or ADC.
-    Service account keys are never stored in source control.
-    """
-    global _firebase_initialized
-    if _firebase_initialized or firebase_admin._apps:
-        _firebase_initialized = True
-        return
-
-    try:
-        cred_path = settings.FIREBASE_CREDENTIALS_PATH
-        if cred_path and os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-            firebase_admin.initialize_app(cred, {
-                "projectId": settings.FIREBASE_PROJECT_ID
-            })
-            logger.info("Firebase Admin initialized with service account certificate.")
-        else:
-            # Fall back to Google Application Default Credentials or Project ID options
-            firebase_admin.initialize_app(options={
-                "projectId": settings.FIREBASE_PROJECT_ID
-            })
-            logger.info("Firebase Admin initialized with default credentials / projectId: %s", settings.FIREBASE_PROJECT_ID)
-        _firebase_initialized = True
-    except Exception as e:
-        logger.warning("Firebase Admin initialization note: %s", str(e))
-        _firebase_initialized = True
-
-
-# Initialize on import
-initialize_firebase_admin()
+# Initialize Firebase Admin on import
+try:
+    initialize_firebase_admin()
+except Exception as _e:
+    logger.warning("Initial Firebase Admin setup note: %s", str(_e))
 
 
 def verify_firebase_token(token: str, check_revoked: bool = True) -> Dict[str, Any]:

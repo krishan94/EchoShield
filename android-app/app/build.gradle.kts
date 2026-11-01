@@ -20,6 +20,9 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        buildConfigField("String", "LAN_BASE_URL", "\"http://172.20.10.3:8000\"")
+        buildConfigField("String", "EMULATOR_BASE_URL", "\"http://10.0.2.2:8000\"")
     }
 
     buildTypes {
@@ -29,9 +32,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("String", "BACKEND_BASE_URL", "\"https://api.echoshield.com\"")
         }
         debug {
             isDebuggable = true
+            buildConfigField("String", "BACKEND_BASE_URL", "\"http://172.20.10.3:8000\"")
         }
     }
 
@@ -46,12 +51,17 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 
@@ -88,6 +98,12 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+
+    // DataStore Preferences for Theme & User Settings
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // WebRTC Real-Time Audio Calling
+    implementation("io.getstream:stream-webrtc-android:1.3.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

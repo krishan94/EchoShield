@@ -82,10 +82,13 @@ fun EchoBottomNavigation(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BottomNavItem.values().forEach { item ->
+            val selectedColor = MaterialTheme.colorScheme.primary
+            val unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+            BottomNavItem.entries.forEach { item ->
                 val isSelected = currentRoute == item.route
                 val animatedColor by animateColorAsState(
-                    targetValue = if (isSelected) PrimaryTeal else MaterialTheme.colorScheme.onSurfaceVariant,
+                    targetValue = if (isSelected) selectedColor else unselectedColor,
                     animationSpec = tween(durationMillis = 200),
                     label = "bottomNavColor"
                 )
@@ -109,7 +112,7 @@ fun EchoBottomNavigation(
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(
-                                if (isSelected) PrimaryTeal.copy(alpha = 0.15f) else Color.Transparent
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent
                             )
                             .padding(horizontal = 14.dp, vertical = 4.dp),
                         contentAlignment = Alignment.Center

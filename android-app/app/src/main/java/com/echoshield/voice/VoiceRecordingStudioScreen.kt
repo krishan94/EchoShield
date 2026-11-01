@@ -48,6 +48,8 @@ import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 import com.echoshield.theme.SuccessGreen
 import com.echoshield.voice.audio.AudioRecordManager
+import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun VoiceRecordingStudioScreen(
@@ -72,7 +74,9 @@ fun VoiceRecordingStudioScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            recordManager.cancelRecording()
+            if (recordManager.isRecording.value) {
+                recordManager.cancelRecording()
+            }
         }
     }
 
@@ -85,7 +89,9 @@ fun VoiceRecordingStudioScreen(
             title = "Recording Studio",
             subtitle = "Sample ${uiState.currentSampleIndex} of $totalSamples",
             onNavigateBack = {
-                recordManager.cancelRecording()
+                if (recordManager.isRecording.value) {
+                    recordManager.cancelRecording()
+                }
                 onNavigateBack()
             }
         )
@@ -244,8 +250,9 @@ fun VoiceRecordingStudioScreen(
                 EchoPrimaryButton(
                     text = "Start Recording Sample",
                     onClick = {
-                        val outputFile = java.io.File(
-                            context.cacheDir,
+                        val enrollmentDir = File(context.filesDir, "pending_enrollment").apply { mkdirs() }
+                        val outputFile = File(
+                            enrollmentDir,
                             "voice_sample_${uiState.currentSampleIndex}_${System.currentTimeMillis()}.wav"
                         )
                         recordManager.startRecording(outputFile, scope)
@@ -257,21 +264,23 @@ fun VoiceRecordingStudioScreen(
                 EchoPrimaryButton(
                     text = "Stop & Evaluate Sample (${elapsedSeconds}s)",
                     onClick = {
-                        val wavFile = recordManager.stopRecording()
-                        if (wavFile != null && wavFile.exists()) {
-                            val quality = com.echoshield.voice.audio.AudioQualityValidator.validateWavFile(wavFile)
-                            val prompt = viewModel.samplePrompts[promptIndex]
-                            val sample = com.echoshield.domain.model.RecordedSample(
-                                sampleIndex = uiState.currentSampleIndex,
-                                file = wavFile,
-                                prompt = prompt,
-                                durationSeconds = quality.durationSeconds,
-                                snrDb = quality.snrDb,
-                                rmsEnergy = quality.rmsEnergy,
-                                isValid = quality.isValid
-                            )
-                            viewModel.setSampleForReview(sample, quality.errorMessage)
-                            onRecordingCompleted()
+                        scope.launch {
+                            val wavFile = recordManager.stopRecording()
+                            if (wavFile != null && wavFile.exists() && wavFile.length() > 44) {
+                                val quality = com.echoshield.voice.audio.AudioQualityValidator.validateWavFile(wavFile)
+                                val prompt = viewModel.samplePrompts[promptIndex]
+                                val sample = com.echoshield.domain.model.RecordedSample(
+                                    sampleIndex = uiState.currentSampleIndex,
+                                    file = wavFile,
+                                    prompt = prompt,
+                                    durationSeconds = quality.durationSeconds,
+                                    snrDb = quality.snrDb,
+                                    rmsEnergy = quality.rmsEnergy,
+                                    isValid = quality.isValid
+                                )
+                                viewModel.setSampleForReview(sample, quality.errorMessage)
+                                onRecordingCompleted()
+                            }
                         }
                     },
                     leadingIcon = Icons.Default.Stop,

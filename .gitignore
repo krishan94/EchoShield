@@ -37,9 +37,15 @@ signing.properties
 # Google Services & Firebase Secrets
 # Sensitive client config and service account credentials MUST NOT be committed
 google-services.json
-*serviceAccountKey*.json
+*serviceAccount*.json
+*service_account*.json
 *service-account*.json
+*firebase*credentials*.json
+*firebase*admin*.json
 firebase-credentials.json
+secrets/
+**/secrets/*
+!**/secrets/.gitkeep
 
 # --- Python & Backend ---
 __pycache__/
@@ -77,12 +83,19 @@ htmlcov/
 
 # Environment Variables & Secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.env
 *.pem
 *.key
 *.cert
 *.crt
+*.p12
+*.pfx
+
+# Temporary inspection/build scratch folders
+temp_adm/
+temp_bld/
 
 # --- AI Engine & Model Checkpoints ---
 # Pretrained checkpoints are downloaded dynamically or hosted in storage

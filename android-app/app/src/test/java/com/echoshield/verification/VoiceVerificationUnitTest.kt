@@ -10,6 +10,11 @@ import com.echoshield.domain.model.VoiceVerificationResult
 import com.echoshield.domain.model.AntiSpoofOutcome
 import com.echoshield.domain.model.AntiSpoofAnalysisResult
 import com.echoshield.domain.model.AntiSpoofAudioQuality
+import com.echoshield.domain.model.CombinedSecurityAnalysisResult
+import com.echoshield.domain.model.CombinedSecurityOutcome
+import com.echoshield.domain.model.SpeakerVerificationSummary
+import com.echoshield.domain.model.AntiSpoofSummary
+import com.echoshield.domain.model.AcousticScreeningSummary
 import com.echoshield.domain.repository.FamilyRepository
 import com.echoshield.domain.repository.VoiceRepository
 import kotlinx.coroutines.Dispatchers
@@ -225,6 +230,59 @@ class TestVoiceRepository : VoiceRepository {
         val count = historyLog.size
         historyLog.clear()
         return Result.success(count)
+    }
+
+    var shouldFailSecurity: Boolean = false
+    var simulatedSecurityOutcome: CombinedSecurityOutcome = CombinedSecurityOutcome.IDENTITY_CONFIRMED
+
+    override suspend fun analyzeSecurity(
+        memberId: String,
+        audioFile: File,
+        requestId: String?
+    ): Result<CombinedSecurityAnalysisResult> {
+        if (shouldFailSecurity) {
+            return Result.failure(Exception("Security analysis service unavailable"))
+        }
+
+        val result = CombinedSecurityAnalysisResult(
+            analysisId = "sec_unit_test_101",
+            requestId = requestId,
+            targetMemberId = memberId,
+            targetMemberName = if (memberId == "uid_alice") "Alice" else "Bob",
+            combinedDecision = simulatedSecurityOutcome,
+            decisionHeadline = "Security Analysis Result",
+            explanation = "Evaluated by unit test mock decision engine.",
+            decisionFactors = listOf("Speaker matched reference", "No synthetic vocoder artifacts detected"),
+            speakerVerification = SpeakerVerificationSummary(
+                result = "VOICE_MATCHED",
+                similarityScore = 0.88f,
+                matchThreshold = 0.72f,
+                nonMatchThreshold = 0.58f,
+                decisionStatus = "high_match",
+                explanation = "Matched reference."
+            ),
+            antiSpoofing = AntiSpoofSummary(
+                resultCategory = if (simulatedSecurityOutcome == CombinedSecurityOutcome.SUSPICIOUS_AUDIO) "SPOOF_SUSPECTED" else "NO_SPOOF_SIGNAL_DETECTED",
+                spoofScore = if (simulatedSecurityOutcome == CombinedSecurityOutcome.SUSPICIOUS_AUDIO) 0.92f else 0.05f,
+                confidenceScore = 0.95f,
+                scoreInterpretation = "Test interpretation",
+                replayDetectionSupported = false,
+                replayLimitationNotice = "Replay not detected"
+            ),
+            audioQuality = AcousticScreeningSummary(
+                durationSeconds = 3.5f,
+                sampleRate = 16000,
+                snrDb = 22.0f,
+                rmsEnergy = 0.04f,
+                statusLabel = "EXCELLENT",
+                isAcceptable = true
+            ),
+            limitations = listOf("Replay notice", "Experimental notice"),
+            isExperimental = true,
+            analyzedAt = "2026-11-01T00:00:00Z",
+            disclaimer = "Test disclaimer"
+        )
+        return Result.success(result)
     }
 }
 
@@ -446,5 +504,87 @@ class VoiceVerificationUnitTest {
         assertNull(viewModel.uiState.value.verificationResult)
         assertNull(viewModel.uiState.value.antiSpoofResult)
         assertFalse(viewModel.uiState.value.hasRecordedSample)
+    }
+
+    @Test
+    fun testAnalyzeSecurity_Success_IdentityConfirmed() = runTest(testDispatcher) {
+        val dummyAudio = File.createTempFile("test_audio", ".wav").apply { deleteOnExit() }
+        viewModel.setRecordedAudio(dummyAudio)
+
+        fakeVoiceRepo.simulatedSecurityOutcome = CombinedSecurityOutcome.IDENTITY_CONFIRMED
+
+        viewModel.analyzeSecurity()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isAnalyzingSecurity)
+        assertNotNull(state.combinedSecurityResult)
+        assertEquals(CombinedSecurityOutcome.IDENTITY_CONFIRMED, state.combinedSecurityResult!!.combinedDecision)
+        assertEquals("Alice", state.combinedSecurityResult!!.targetMemberName)
+        assertNull(state.errorMessage)
+    }
+
+    @Test
+    fun testAnalyzeSecurity_SuspiciousAudioOverride() = runTest(testDispatcher) {
+        val dummyAudio = File.createTempFile("test_audio_spoof", ".wav").apply { deleteOnExit() }
+        viewModel.setRecordedAudio(dummyAudio)
+
+        fakeVoiceRepo.simulatedSecurityOutcome = CombinedSecurityOutcome.SUSPICIOUS_AUDIO
+
+        viewModel.analyzeSecurity()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isAnalyzingSecurity)
+        assertNotNull(state.combinedSecurityResult)
+        assertEquals(CombinedSecurityOutcome.SUSPICIOUS_AUDIO, state.combinedSecurityResult!!.combinedDecision)
+        assertEquals("SPOOF_SUSPECTED", state.combinedSecurityResult!!.antiSpoofing?.resultCategory)
+    }
+
+    @Test
+    fun testAnalyzeSecurity_NetworkFailure_SetsError() = runTest(testDispatcher) {
+        val dummyAudio = File.createTempFile("test_audio_fail", ".wav").apply { deleteOnExit() }
+        viewModel.setRecordedAudio(dummyAudio)
+
+        fakeVoiceRepo.shouldFailSecurity = true
+
+        viewModel.analyzeSecurity()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isAnalyzingSecurity)
+        assertNull(state.combinedSecurityResult)
+        assertNotNull(state.errorMessage)
+        assertTrue(state.errorMessage!!.contains("unavailable") || state.errorMessage!!.contains("failed"))
+    }
+
+    @Test
+    fun testAnalyzeSecurity_NoAudioRecorded_SetsError() = runTest(testDispatcher) {
+        viewModel.clearRecordedAudio()
+        viewModel.analyzeSecurity()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNotNull(state.errorMessage)
+        assertTrue(state.errorMessage!!.contains("No valid audio"))
+    }
+
+    @Test
+    fun testResetVerification_ClearsCombinedSecurityResult() = runTest(testDispatcher) {
+        val dummyAudio = File.createTempFile("test_reset_sec", ".wav").apply { deleteOnExit() }
+        viewModel.setRecordedAudio(dummyAudio)
+        viewModel.analyzeSecurity()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.uiState.value.combinedSecurityResult)
+
+        viewModel.resetVerification()
+
+        val state = viewModel.uiState.value
+        assertNull(state.combinedSecurityResult)
+        assertNull(state.verificationResult)
+        assertNull(state.antiSpoofResult)
+        assertNull(state.recordedFile)
+        assertFalse(state.hasRecordedSample)
     }
 }

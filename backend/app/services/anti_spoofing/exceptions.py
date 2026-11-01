@@ -44,3 +44,4 @@ class SpoofInferenceError(AntiSpoofError):
 
     def __init__(self, message: str = "Error during anti-spoofing tensor inference."):
         super().__init__(message, code="SPOOF_INFERENCE_ERROR")
+

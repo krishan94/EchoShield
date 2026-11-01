@@ -1,15 +1,22 @@
 package com.echoshield.core.di
 
+import android.content.Context
+import com.echoshield.calling.CallSessionCoordinator
+import com.echoshield.core.theme.ThemePreferences
 import com.echoshield.data.remote.AuthRemoteDataSource
+import com.echoshield.data.remote.CallingRemoteDataSource
+import com.echoshield.data.remote.CallingRemoteDataSourceImpl
 import com.echoshield.data.remote.FamilyRemoteDataSource
 import com.echoshield.data.remote.FamilyRemoteDataSourceImpl
 import com.echoshield.data.remote.FirebaseAuthDataSource
 import com.echoshield.data.remote.VoiceRemoteDataSource
 import com.echoshield.data.remote.VoiceRemoteDataSourceImpl
 import com.echoshield.data.repository.AuthRepositoryImpl
+import com.echoshield.data.repository.CallingRepositoryImpl
 import com.echoshield.data.repository.FamilyRepositoryImpl
 import com.echoshield.data.repository.VoiceRepositoryImpl
 import com.echoshield.domain.repository.AuthRepository
+import com.echoshield.domain.repository.CallingRepository
 import com.echoshield.domain.repository.FamilyRepository
 import com.echoshield.domain.repository.VoiceRepository
 
@@ -27,6 +34,23 @@ object AppContainer {
 
     @Volatile
     private var customVoiceRepository: VoiceRepository? = null
+
+    @Volatile
+    private var customCallingRepository: CallingRepository? = null
+
+    @Volatile
+    private var customCallSessionCoordinator: CallSessionCoordinator? = null
+
+    @Volatile
+    private var customThemePreferences: ThemePreferences? = null
+
+    fun getThemePreferences(context: Context): ThemePreferences {
+        return customThemePreferences ?: synchronized(this) {
+            customThemePreferences ?: ThemePreferences(context.applicationContext).also {
+                customThemePreferences = it
+            }
+        }
+    }
 
     /**
      * Singleton instance of [AuthRepository]. Allows override for automated testing.
@@ -58,6 +82,30 @@ object AppContainer {
             }
         }
 
+    /**
+     * Singleton instance of [CallingRepository]. Allows override for automated testing.
+     */
+    val callingRepository: CallingRepository
+        get() = customCallingRepository ?: synchronized(this) {
+            customCallingRepository ?: createDefaultCallingRepository().also {
+                customCallingRepository = it
+            }
+        }
+
+    /**
+     * Singleton instance of [CallSessionCoordinator]. Manages active calls, notifications and WebRTC.
+     */
+    val callSessionCoordinator: CallSessionCoordinator
+        get() = customCallSessionCoordinator ?: synchronized(this) {
+            customCallSessionCoordinator ?: CallSessionCoordinator(
+                callingRepository = callingRepository,
+                voiceRepository = voiceRepository,
+                authRepository = authRepository
+            ).also {
+                customCallSessionCoordinator = it
+            }
+        }
+
     private fun createDefaultAuthRepository(): AuthRepository {
         val remoteDataSource: AuthRemoteDataSource = FirebaseAuthDataSource()
         return AuthRepositoryImpl(remoteDataSource)
@@ -73,6 +121,11 @@ object AppContainer {
         return VoiceRepositoryImpl(remoteDataSource)
     }
 
+    private fun createDefaultCallingRepository(): CallingRepository {
+        val remoteDataSource: CallingRemoteDataSource = CallingRemoteDataSourceImpl(authRepository)
+        return CallingRepositoryImpl(remoteDataSource)
+    }
+
     /**
      * Allows test suites to inject mock or fake repository implementations.
      */
@@ -86,5 +139,13 @@ object AppContainer {
 
     fun setVoiceRepositoryForTesting(repository: VoiceRepository?) {
         customVoiceRepository = repository
+    }
+
+    fun setCallingRepositoryForTesting(repository: CallingRepository?) {
+        customCallingRepository = repository
+    }
+
+    fun setCallSessionCoordinatorForTesting(coordinator: CallSessionCoordinator?) {
+        customCallSessionCoordinator = coordinator
     }
 }

@@ -140,3 +140,80 @@ data class AntiSpoofAnalysisResult(
     val disclaimer: String
 )
 
+
+// ============================================================================
+// PHASE 7: COMBINED SECURITY DECISION ENGINE MODELS
+// ============================================================================
+
+enum class CombinedSecurityOutcome {
+    IDENTITY_CONFIRMED,
+    SUSPICIOUS_AUDIO,
+    IDENTITY_NOT_CONFIRMED,
+    INCONCLUSIVE,
+    ANALYSIS_UNAVAILABLE,
+    AUDIO_QUALITY_FAILED,
+    PROFILE_NOT_ENROLLED;
+
+    companion object {
+        fun fromString(value: String): CombinedSecurityOutcome = when (value.uppercase()) {
+            "IDENTITY_CONFIRMED" -> IDENTITY_CONFIRMED
+            "SUSPICIOUS_AUDIO" -> SUSPICIOUS_AUDIO
+            "IDENTITY_NOT_CONFIRMED" -> IDENTITY_NOT_CONFIRMED
+            "INCONCLUSIVE" -> INCONCLUSIVE
+            "ANALYSIS_UNAVAILABLE" -> ANALYSIS_UNAVAILABLE
+            "AUDIO_QUALITY_FAILED" -> AUDIO_QUALITY_FAILED
+            "PROFILE_NOT_ENROLLED" -> PROFILE_NOT_ENROLLED
+            else -> INCONCLUSIVE
+        }
+    }
+}
+
+data class SpeakerVerificationSummary(
+    val result: String,
+    val similarityScore: Float?,
+    val matchThreshold: Float = 0.72f,
+    val nonMatchThreshold: Float = 0.58f,
+    val decisionStatus: String,
+    val explanation: String,
+    val modelName: String = "SpeechBrain ECAPA-TDNN",
+    val modelVersion: String = "voxceleb-v1.1"
+)
+
+data class AntiSpoofSummary(
+    val resultCategory: String,
+    val spoofScore: Float?,
+    val confidenceScore: Float?,
+    val scoreInterpretation: String,
+    val modelName: String = "mo-thecreator/Deepfake-audio-detection (Wav2Vec2)",
+    val modelVersion: String = "v1.0-hf",
+    val replayDetectionSupported: Boolean = false,
+    val replayLimitationNotice: String
+)
+
+data class AcousticScreeningSummary(
+    val durationSeconds: Float,
+    val sampleRate: Int = 16000,
+    val snrDb: Float,
+    val rmsEnergy: Float,
+    val statusLabel: String,
+    val isAcceptable: Boolean,
+    val rejectionReason: String? = null
+)
+
+data class CombinedSecurityAnalysisResult(
+    val analysisId: String,
+    val requestId: String? = null,
+    val targetMemberId: String,
+    val targetMemberName: String,
+    val combinedDecision: CombinedSecurityOutcome,
+    val decisionHeadline: String,
+    val explanation: String,
+    val decisionFactors: List<String> = emptyList(),
+    val speakerVerification: SpeakerVerificationSummary? = null,
+    val antiSpoofing: AntiSpoofSummary? = null,
+    val audioQuality: AcousticScreeningSummary,
+    val limitations: List<String> = emptyList(),
+    val isExperimental: Boolean = true,
+    val analyzedAt: String,
+    val disclaimer: String
+)

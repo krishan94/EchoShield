@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.echoshield.core.di.AppContainer
 import com.echoshield.domain.model.AntiSpoofAnalysisResult
+import com.echoshield.domain.model.CombinedSecurityAnalysisResult
 import com.echoshield.domain.model.FamilyMember
 import com.echoshield.domain.model.VerificationHistoryRecord
 import com.echoshield.domain.model.VoiceVerificationResult
@@ -26,8 +27,10 @@ data class VoiceVerificationUiState(
     val recordedFile: File? = null,
     val isVerifying: Boolean = false,
     val isAnalyzingSpoof: Boolean = false,
+    val isAnalyzingSecurity: Boolean = false,
     val verificationResult: VoiceVerificationResult? = null,
     val antiSpoofResult: AntiSpoofAnalysisResult? = null,
+    val combinedSecurityResult: CombinedSecurityAnalysisResult? = null,
     val historyRecords: List<VerificationHistoryRecord> = emptyList(),
     val isLoadingHistory: Boolean = false,
     val errorMessage: String? = null
@@ -89,6 +92,7 @@ class VoiceVerificationViewModel(
                 selectedMember = member,
                 verificationResult = null,
                 antiSpoofResult = null,
+                combinedSecurityResult = null,
                 errorMessage = null
             )
         }
@@ -127,6 +131,7 @@ class VoiceVerificationViewModel(
             it.copy(
                 verificationResult = null,
                 antiSpoofResult = null,
+                combinedSecurityResult = null,
                 errorMessage = null
             )
         }
@@ -198,6 +203,55 @@ class VoiceVerificationViewModel(
                     it.copy(
                         isAnalyzingSpoof = false,
                         errorMessage = err.message ?: "Anti-spoofing analysis request failed."
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Executes Phase 7 Combined Security Decision Engine:
+     * Dual biometric speaker recognition and deepfake anti-spoofing with synthesized conflict resolution.
+     */
+    fun analyzeSecurity(file: File? = null) {
+        val member = _uiState.value.selectedMember
+        if (member == null) {
+            _uiState.update { it.copy(errorMessage = "Please select a family member to verify against.") }
+            return
+        }
+
+        val audioToAnalyze = file ?: _uiState.value.recordedFile
+        if (audioToAnalyze == null || !audioToAnalyze.exists()) {
+            _uiState.update { it.copy(errorMessage = "No valid audio sample available for security analysis.") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isAnalyzingSecurity = true,
+                    combinedSecurityResult = null,
+                    verificationResult = null,
+                    antiSpoofResult = null,
+                    errorMessage = null
+                )
+            }
+            val targetId = if (member.memberId.isNotBlank()) member.memberId else member.id
+            val result = voiceRepository.analyzeSecurity(targetId, audioToAnalyze)
+
+            result.onSuccess { outcome ->
+                _uiState.update {
+                    it.copy(
+                        isAnalyzingSecurity = false,
+                        combinedSecurityResult = outcome
+                    )
+                }
+                loadVerificationHistory()
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isAnalyzingSecurity = false,
+                        errorMessage = err.message ?: "Combined security analysis request failed."
                     )
                 }
             }

@@ -1,5 +1,6 @@
 package com.echoshield.calling
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,48 +24,58 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.echoshield.core.components.EchoAvatar
 import com.echoshield.core.components.EchoPulseRadar
-import com.echoshield.data.preview.PreviewData
-import com.echoshield.theme.CyberShieldGradient
+import com.echoshield.domain.model.CallStatus
+import com.echoshield.family.FamilyViewModel
 import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
-import kotlinx.coroutines.delay
 
 @Composable
 fun OutgoingCallScreen(
     contactId: String,
     onCallConnected: () -> Unit,
-    onCancelCall: () -> Unit
+    onCancelCall: () -> Unit,
+    callingViewModel: CallingViewModel? = null,
+    familyViewModel: FamilyViewModel? = null
 ) {
-    val member = PreviewData.familyMembers.find { it.id == contactId } ?: PreviewData.familyMembers.first()
-    var connectionStateText by remember { mutableStateOf("Securing WebRTC channel...") }
+    val context = LocalContext.current
+    val familyUiState = familyViewModel?.uiState?.collectAsState()
+    val member = familyUiState?.value?.members?.find { it.id == contactId }
+    val memberName = member?.name ?: "Family Contact"
+    val relationship = member?.relationship ?: "Family Member"
 
-    // Simulate connection flow to active call
-    LaunchedEffect(Unit) {
-        delay(1500)
-        connectionStateText = "Ringing family endpoint..."
-        delay(2000)
-        connectionStateText = "Establishing encrypted audio session..."
-        delay(1000)
-        onCallConnected()
+    val callingUiState = callingViewModel?.uiState?.collectAsState()
+    val statusText = callingUiState?.value?.statusMessage ?: "Securing WebRTC channel..."
+
+    LaunchedEffect(contactId) {
+        callingViewModel?.startOutgoingCall(
+            targetMemberId = contactId,
+            targetMemberName = memberName,
+            context = context
+        )
+    }
+
+    LaunchedEffect(callingUiState?.value?.callStatus) {
+        if (callingUiState?.value?.callStatus == CallStatus.CONNECTED) {
+            onCallConnected()
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(CyberShieldGradient)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -91,80 +102,78 @@ fun OutgoingCallScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "OUTGOING ENCRYPTED CALL",
-                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
-                        color = PrimaryTeal
+                        text = "WebRTC Secure Stream",
+                        fontSize = 12.sp,
+                        color = PrimaryTeal,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(36.dp))
 
-            // Pulse radar & Avatar
+            // Radar Pulse around Avatar
             Box(
-                modifier = Modifier.size(180.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(240.dp)
             ) {
-                EchoPulseRadar(size = 180.dp, color = PrimaryTeal)
+                EchoPulseRadar(
+                    color = PrimaryTeal,
+                    size = 220.dp
+                )
+
                 EchoAvatar(
-                    name = member.name,
-                    size = 110.dp,
-                    isVoiceEnrolled = member.isVoiceEnrolled
+                    name = memberName,
+                    size = 110.dp
                 )
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = member.name,
-                style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.White
+                text = memberName,
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = member.relationship,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = relationship,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = connectionStateText,
-                style = MaterialTheme.typography.titleSmall,
+                text = statusText,
+                style = MaterialTheme.typography.bodyMedium,
                 color = PrimaryTeal
             )
 
             Spacer(modifier = Modifier.weight(1f))
 
             // Cancel Call Button
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = onCancelCall,
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .background(DangerRed)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CallEnd,
-                        contentDescription = "Cancel Call",
-                        tint = Color.White,
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = "End Call",
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = DangerRed
+            IconButton(
+                onClick = {
+                    callingViewModel?.endCall(reason = "Caller cancelled")
+                    onCancelCall()
+                },
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(DangerRed)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CallEnd,
+                    contentDescription = "Cancel Call",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
-

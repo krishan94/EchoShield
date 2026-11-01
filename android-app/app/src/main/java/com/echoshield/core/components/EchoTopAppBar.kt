@@ -72,7 +72,7 @@ fun EchoTopAppBar(
                         Icon(
                             imageVector = Icons.Default.Menu,
                             contentDescription = "Navigation Menu",
-                            tint = PrimaryTeal
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }

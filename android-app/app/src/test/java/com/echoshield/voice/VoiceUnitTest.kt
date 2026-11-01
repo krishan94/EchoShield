@@ -5,6 +5,8 @@ import com.echoshield.domain.model.VoiceConsentRecord
 import com.echoshield.domain.model.VoiceEnrollmentResult
 import com.echoshield.domain.model.VoiceProfileInfo
 import com.echoshield.domain.repository.VoiceRepository
+import com.echoshield.data.remote.VoiceRemoteDataSource
+import com.echoshield.data.repository.VoiceRepositoryImpl
 import com.echoshield.voice.audio.AudioQualityValidator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -168,10 +170,103 @@ class FakeVoiceRepository : VoiceRepository {
         return Result.success(emptyList())
     }
 
+    override suspend fun analyzeSecurity(
+        memberId: String,
+        audioFile: File,
+        requestId: String?
+    ): Result<com.echoshield.domain.model.CombinedSecurityAnalysisResult> {
+        if (shouldFailNetwork) return Result.failure(Exception("Network unreachable"))
+        val result = com.echoshield.domain.model.CombinedSecurityAnalysisResult(
+            analysisId = "sec_test_001",
+            requestId = requestId,
+            targetMemberId = memberId,
+            targetMemberName = "Test Member",
+            combinedDecision = com.echoshield.domain.model.CombinedSecurityOutcome.IDENTITY_CONFIRMED,
+            decisionHeadline = "Confirmed",
+            explanation = "Matched baseline",
+            decisionFactors = listOf("Speaker matched", "Clean audio"),
+            speakerVerification = com.echoshield.domain.model.SpeakerVerificationSummary(
+                result = "VOICE_MATCHED",
+                similarityScore = 0.88f,
+                matchThreshold = 0.72f,
+                nonMatchThreshold = 0.58f,
+                decisionStatus = "high_match",
+                explanation = "Matched."
+            ),
+            antiSpoofing = com.echoshield.domain.model.AntiSpoofSummary(
+                resultCategory = "NO_SPOOF_SIGNAL_DETECTED",
+                spoofScore = 0.05f,
+                confidenceScore = 0.95f,
+                scoreInterpretation = "Clean",
+                replayDetectionSupported = false,
+                replayLimitationNotice = "Notice"
+            ),
+            audioQuality = com.echoshield.domain.model.AcousticScreeningSummary(
+                durationSeconds = 3.5f,
+                sampleRate = 16000,
+                snrDb = 20.0f,
+                rmsEnergy = 0.04f,
+                statusLabel = "EXCELLENT",
+                isAcceptable = true
+            ),
+            limitations = listOf("Limitation"),
+            isExperimental = true,
+            analyzedAt = "2026-11-01T00:00:00Z",
+            disclaimer = "Disclaimer"
+        )
+        return Result.success(result)
+    }
+
     override suspend fun clearVerificationHistory(): Result<Int> {
         if (shouldFailNetwork) return Result.failure(Exception("Network unreachable"))
         return Result.success(0)
     }
+}
+
+/**
+ * Fake implementation of [VoiceRemoteDataSource] for testing repository file cleanup and error handling.
+ */
+class FakeVoiceRemoteDataSource : VoiceRemoteDataSource {
+    var shouldFail: Boolean = false
+    var enrollCallCount: Int = 0
+
+    override suspend fun recordConsent(granted: Boolean): VoiceConsentRecord {
+        return VoiceConsentRecord("u1", if (granted) "granted" else "revoked", "1.0", "now")
+    }
+
+    override suspend fun enrollVoice(samples: List<File>): VoiceEnrollmentResult {
+        enrollCallCount++
+        if (shouldFail) {
+            throw java.io.IOException("Simulated 503 Backend Service Unavailable")
+        }
+        return VoiceEnrollmentResult("u1", "enrolled", 0.95f, samples.size, "Enrollment successful")
+    }
+
+    override suspend fun getVoiceProfile(): VoiceProfileInfo {
+        return VoiceProfileInfo("u1", "enrolled", true, 0.95f, 3, "SpeechBrain ECAPA-TDNN", "voxceleb-v1.1", "now", "granted")
+    }
+
+    override suspend fun deleteVoiceProfile() {}
+
+    override suspend fun verifyVoice(memberId: String, audioFile: File): com.echoshield.domain.model.VoiceVerificationResult {
+        throw NotImplementedError()
+    }
+
+    override suspend fun analyzeSpoof(audioFile: File, requestId: String?): com.echoshield.domain.model.AntiSpoofAnalysisResult {
+        throw NotImplementedError()
+    }
+
+    override suspend fun analyzeSecurity(
+        memberId: String,
+        audioFile: File,
+        requestId: String?
+    ): com.echoshield.domain.model.CombinedSecurityAnalysisResult {
+        throw NotImplementedError()
+    }
+
+    override suspend fun getVerificationHistory(): List<com.echoshield.domain.model.VerificationHistoryRecord> = emptyList()
+
+    override suspend fun clearVerificationHistory(): Int = 0
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -244,8 +339,14 @@ class VoiceUnitTest {
 
     @Test
     fun testSampleProgression_Sample1ToSample2ToSample3() = runTest(testDispatcher) {
-        val dummyFile1 = File.createTempFile("sample_1", ".wav").apply { deleteOnExit() }
-        val dummyFile2 = File.createTempFile("sample_2", ".wav").apply { deleteOnExit() }
+        val dummyFile1 = File.createTempFile("sample_1", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        val dummyFile2 = File.createTempFile("sample_2", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
 
         val sample1 = RecordedSample(1, dummyFile1, "prompt 1", 3.5f, 28f, 0.05f, isValid = true)
         viewModel.setSampleForReview(sample1, null)
@@ -289,9 +390,18 @@ class VoiceUnitTest {
 
     @Test
     fun testFinalSampleSubmission_TriggersEnrollment() = runTest(testDispatcher) {
-        val dummy1 = File.createTempFile("sample_1", ".wav").apply { deleteOnExit() }
-        val dummy2 = File.createTempFile("sample_2", ".wav").apply { deleteOnExit() }
-        val dummy3 = File.createTempFile("sample_3", ".wav").apply { deleteOnExit() }
+        val dummy1 = File.createTempFile("sample_1", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        val dummy2 = File.createTempFile("sample_2", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        val dummy3 = File.createTempFile("sample_3", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
 
         // Sample 1
         viewModel.setSampleForReview(RecordedSample(1, dummy1, "p1", 3.5f, 25f, 0.04f, true), null)
@@ -322,7 +432,10 @@ class VoiceUnitTest {
     @Test
     fun testDeleteVoiceProfile_ResetsState() = runTest(testDispatcher) {
         // Enroll first
-        val dummy1 = File.createTempFile("sample_1", ".wav").apply { deleteOnExit() }
+        val dummy1 = File.createTempFile("sample_1", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
         fakeRepo.enrollVoiceSamples(listOf(dummy1, dummy1, dummy1))
         viewModel.refreshVoiceProfile()
         advanceUntilIdle()
@@ -403,5 +516,207 @@ class VoiceUnitTest {
             fos.write(pcm)
         }
     }
-}
 
+    @Test
+    fun testPreFlightValidation_DetectsMissingSample1BeforeUpload() = runTest(testDispatcher) {
+        val dummy1 = File.createTempFile("sample_1", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        val dummy2 = File.createTempFile("sample_2", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        val dummy3 = File.createTempFile("sample_3", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+
+        // Accept Sample 1 & 2
+        viewModel.setSampleForReview(RecordedSample(1, dummy1, "p1", 3.5f, 25f, 0.04f, true), null)
+        viewModel.acceptCurrentSample({}, {})
+        advanceUntilIdle()
+
+        viewModel.setSampleForReview(RecordedSample(2, dummy2, "p2", 3.5f, 25f, 0.04f, true), null)
+        viewModel.acceptCurrentSample({}, {})
+        advanceUntilIdle()
+
+        // Now simulate accidental deletion of Sample 1 (the exact ENOENT bug)
+        dummy1.delete()
+        assertFalse("Sample 1 file must be deleted to simulate ENOENT bug", dummy1.exists())
+
+        // Try to accept final Sample 3
+        viewModel.setSampleForReview(RecordedSample(3, dummy3, "p3", 3.5f, 25f, 0.04f, true), null)
+        var allDoneCalled = false
+        viewModel.acceptCurrentSample(
+            onProceedToNext = {},
+            onAllSamplesCompleted = { allDoneCalled = true }
+        )
+        advanceUntilIdle()
+
+        // Submission MUST be prevented and user redirected to re-record missing Sample 1
+        assertFalse("Submission should not succeed if Sample 1 was deleted", allDoneCalled)
+        assertFalse(viewModel.uiState.value.isUploading)
+        assertNotNull(viewModel.uiState.value.errorMessage)
+        assertTrue(viewModel.uiState.value.errorMessage!!.contains("Sample #1"))
+        assertTrue(viewModel.uiState.value.errorMessage!!.contains("missing or corrupted"))
+        assertEquals("Should redirect user to re-record Sample 1", 1, viewModel.uiState.value.currentSampleIndex)
+    }
+
+    @Test
+    fun testPreFlightValidation_DetectsCorrupted0ByteSample() = runTest(testDispatcher) {
+        val dummy1 = File.createTempFile("sample_1", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        // Empty 0-byte file
+        val dummy2 = File.createTempFile("sample_2", ".wav").apply { deleteOnExit() }
+        val dummy3 = File.createTempFile("sample_3", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+
+        viewModel.setSampleForReview(RecordedSample(1, dummy1, "p1", 3.5f, 25f, 0.04f, true), null)
+        viewModel.acceptCurrentSample({}, {})
+        advanceUntilIdle()
+
+        // Try to accept 0-byte sample 2
+        viewModel.setSampleForReview(RecordedSample(2, dummy2, "p2", 3.5f, 25f, 0.04f, true), null)
+        var nextCalled = false
+        viewModel.acceptCurrentSample(onProceedToNext = { nextCalled = true }, onAllSamplesCompleted = {})
+        advanceUntilIdle()
+
+        assertFalse("0-byte sample must not be accepted", nextCalled)
+        assertNotNull(viewModel.uiState.value.errorMessage)
+        assertTrue(viewModel.uiState.value.errorMessage!!.contains("Sample #2"))
+    }
+
+    @Test
+    fun testUploadFailure_PreservesRecordedSamplesForRetry() = runTest(testDispatcher) {
+        val dummy1 = File.createTempFile("sample_1", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        val dummy2 = File.createTempFile("sample_2", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+        val dummy3 = File.createTempFile("sample_3", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+            deleteOnExit() 
+        }
+
+        fakeRepo.shouldFailNetwork = true
+
+        viewModel.setSampleForReview(RecordedSample(1, dummy1, "p1", 3.5f, 25f, 0.04f, true), null)
+        viewModel.acceptCurrentSample({}, {})
+        viewModel.setSampleForReview(RecordedSample(2, dummy2, "p2", 3.5f, 25f, 0.04f, true), null)
+        viewModel.acceptCurrentSample({}, {})
+        viewModel.setSampleForReview(RecordedSample(3, dummy3, "p3", 3.5f, 25f, 0.04f, true), null)
+
+        var allDoneCalled = false
+        viewModel.acceptCurrentSample(
+            onProceedToNext = {},
+            onAllSamplesCompleted = { allDoneCalled = true }
+        )
+        advanceUntilIdle()
+
+        assertFalse(allDoneCalled)
+        assertFalse(viewModel.uiState.value.isUploading)
+        assertNotNull(viewModel.uiState.value.errorMessage)
+        // Samples must still be preserved in state so user doesn't have to re-record
+        assertEquals(3, viewModel.uiState.value.recordedSamples.size)
+        assertTrue(dummy1.exists())
+        assertTrue(dummy2.exists())
+        assertTrue(dummy3.exists())
+    }
+
+    @Test
+    fun testCancelEnrollment_CleansUpAllRecordedFiles() = runTest(testDispatcher) {
+        val dummy1 = File.createTempFile("sample_1", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+        }
+        val dummy2 = File.createTempFile("sample_2", ".wav").apply { 
+            writeSyntheticWav(this, 3.5f)
+        }
+
+        viewModel.setSampleForReview(RecordedSample(1, dummy1, "p1", 3.5f, 25f, 0.04f, true), null)
+        viewModel.acceptCurrentSample({}, {})
+        advanceUntilIdle()
+
+        viewModel.setSampleForReview(RecordedSample(2, dummy2, "p2", 3.5f, 25f, 0.04f, true), null)
+        advanceUntilIdle()
+
+        assertTrue(dummy1.exists())
+        assertTrue(dummy2.exists())
+
+        viewModel.cancelEnrollment()
+        advanceUntilIdle()
+
+        assertFalse("Sample 1 file should be deleted on cancel", dummy1.exists())
+        assertFalse("Sample 2 file should be deleted on cancel", dummy2.exists())
+        assertEquals(1, viewModel.uiState.value.currentSampleIndex)
+        assertTrue(viewModel.uiState.value.recordedSamples.isEmpty())
+        assertNull(viewModel.uiState.value.currentReviewSample)
+    }
+
+    @Test
+    fun testVoiceRepository_DeletesFilesOnlyOnSuccessfulEnrollment() = runTest(testDispatcher) {
+        val fakeRemote = FakeVoiceRemoteDataSource()
+        val repo = VoiceRepositoryImpl(remoteDataSource = fakeRemote)
+        val f1 = File.createTempFile("repo_test_1", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+        val f2 = File.createTempFile("repo_test_2", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+        val f3 = File.createTempFile("repo_test_3", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+
+        assertTrue(f1.exists())
+        assertTrue(f2.exists())
+        assertTrue(f3.exists())
+
+        val result = repo.enrollVoiceSamples(listOf(f1, f2, f3))
+        assertTrue(result.isSuccess)
+        assertEquals(1, fakeRemote.enrollCallCount)
+
+        // Files must be deleted after successful upload
+        assertFalse("File 1 must be deleted after successful enrollment", f1.exists())
+        assertFalse("File 2 must be deleted after successful enrollment", f2.exists())
+        assertFalse("File 3 must be deleted after successful enrollment", f3.exists())
+    }
+
+    @Test
+    fun testVoiceRepository_PreservesFilesOnRemoteFailure() = runTest(testDispatcher) {
+        val fakeRemote = FakeVoiceRemoteDataSource().apply { shouldFail = true }
+        val repo = VoiceRepositoryImpl(remoteDataSource = fakeRemote)
+        val f1 = File.createTempFile("repo_fail_1", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+        val f2 = File.createTempFile("repo_fail_2", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+        val f3 = File.createTempFile("repo_fail_3", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+
+        val result = repo.enrollVoiceSamples(listOf(f1, f2, f3))
+        assertTrue(result.isFailure)
+
+        // Files MUST NOT be deleted so retry can succeed
+        assertTrue("File 1 must be kept on failure for retry", f1.exists())
+        assertTrue("File 2 must be kept on failure for retry", f2.exists())
+        assertTrue("File 3 must be kept on failure for retry", f3.exists())
+
+        f1.delete()
+        f2.delete()
+        f3.delete()
+    }
+
+    @Test
+    fun testVoiceRepository_RejectsMissingOrEmptyFileBeforeNetwork() = runTest(testDispatcher) {
+        val fakeRemote = FakeVoiceRemoteDataSource()
+        val repo = VoiceRepositoryImpl(remoteDataSource = fakeRemote)
+        val f1 = File.createTempFile("repo_val_1", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+        val f2 = File.createTempFile("repo_val_2", ".wav").apply { writeSyntheticWav(this, 3.5f) }
+        val nonExistent = File("missing_sample_sample_3_non_existent.wav")
+
+        val result = repo.enrollVoiceSamples(listOf(f1, f2, nonExistent))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is java.io.FileNotFoundException)
+        assertEquals("Network call must never be made when file is missing", 0, fakeRemote.enrollCallCount)
+
+        f1.delete()
+        f2.delete()
+    }
+}

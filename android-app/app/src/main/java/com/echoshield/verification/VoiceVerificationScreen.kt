@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import com.echoshield.core.components.EchoAvatar
 import com.echoshield.core.components.EchoCard
 import com.echoshield.core.components.EchoOutlinedButton
@@ -80,6 +81,11 @@ import com.echoshield.domain.model.VerificationOutcome
 import com.echoshield.domain.model.VoiceVerificationResult
 import com.echoshield.domain.model.AntiSpoofOutcome
 import com.echoshield.domain.model.AntiSpoofAnalysisResult
+import com.echoshield.domain.model.CombinedSecurityAnalysisResult
+import com.echoshield.domain.model.CombinedSecurityOutcome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.PersonAdd
 import com.echoshield.theme.AccentBlue
 import com.echoshield.theme.DangerRed
 import com.echoshield.theme.InconclusiveGray
@@ -233,9 +239,19 @@ fun VoiceVerificationScreen(
 
             // 3. Main State Content Area: Result vs Verifying vs Studio
             when {
-                uiState.isVerifying || uiState.isAnalyzingSpoof -> {
+                uiState.isVerifying || uiState.isAnalyzingSpoof || uiState.isAnalyzingSecurity -> {
                     // AI Inference Loading Radar
                     VerificationLoadingCard()
+                }
+
+                uiState.combinedSecurityResult != null -> {
+                    // Phase 7: Combined Security Decision Engine Result
+                    CombinedSecurityResultCard(
+                        result = uiState.combinedSecurityResult!!,
+                        selectedMember = uiState.selectedMember,
+                        onVerifyAnother = { viewModel.resetVerification() },
+                        onRetry = { viewModel.analyzeSecurity() }
+                    )
                 }
 
                 uiState.verificationResult != null || uiState.antiSpoofResult != null -> {
@@ -261,13 +277,16 @@ fun VoiceVerificationScreen(
                         playbackProgress = playbackProgress,
                         isMemberEnrolled = uiState.selectedMember?.isVoiceEnrolled ?: false,
                         onStartRecording = {
-                            val audioFile = File.createTempFile("verify_", ".wav", context.cacheDir)
+                            val verificationDir = File(context.filesDir, "pending_verification").apply { mkdirs() }
+                            val audioFile = File(verificationDir, "verify_${System.currentTimeMillis()}.wav")
                             recordManager.startRecording(audioFile, scope)
                         },
                         onStopRecording = {
-                            val recordedFile = recordManager.stopRecording()
-                            if (recordedFile != null) {
-                                viewModel.setRecordedAudio(recordedFile)
+                            scope.launch {
+                                val recordedFile = recordManager.stopRecording()
+                                if (recordedFile != null) {
+                                    viewModel.setRecordedAudio(recordedFile)
+                                }
                             }
                         },
                         onCancelRecording = {
@@ -295,6 +314,10 @@ fun VoiceVerificationScreen(
                         onVerifyBoth = {
                             playbackManager.stop()
                             viewModel.verifyVoiceWithAntiSpoof()
+                        },
+                        onAnalyzeSecurity = {
+                            playbackManager.stop()
+                            viewModel.analyzeSecurity()
                         }
                     )
                 }
@@ -481,7 +504,8 @@ private fun RecordingStudioCard(
     onResetSample: () -> Unit,
     onVerifySample: () -> Unit,
     onAnalyzeSpoof: () -> Unit,
-    onVerifyBoth: () -> Unit
+    onVerifyBoth: () -> Unit,
+    onAnalyzeSecurity: () -> Unit
 ) {
     EchoCard(padding = 20.dp) {
         Column(
@@ -655,10 +679,10 @@ private fun RecordingStudioCard(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Primary Action: Dual Defense Verification
+                // Primary Action: Combined Security Decision Engine
                 EchoPrimaryButton(
-                    text = "Verify Identity & Deepfake",
-                    onClick = onVerifyBoth,
+                    text = "Combined Security Analysis",
+                    onClick = onAnalyzeSecurity,
                     leadingIcon = Icons.Default.Security,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -900,6 +924,323 @@ private fun formatTimer(seconds: Int): String {
 
 private data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
+
+
+@Composable
+private fun CombinedSecurityResultCard(
+    result: CombinedSecurityAnalysisResult,
+    selectedMember: FamilyMember?,
+    onVerifyAnother: () -> Unit,
+    onRetry: () -> Unit
+) {
+    val (badgeColor, badgeIcon, titleText, subtitleText) = when (result.combinedDecision) {
+        CombinedSecurityOutcome.IDENTITY_CONFIRMED -> Tuple4(
+            SuccessGreen,
+            Icons.Default.VerifiedUser,
+            "Voice Identity Confirmed",
+            "Speaker Matched & No Spoofing Signal"
+        )
+        CombinedSecurityOutcome.SUSPICIOUS_AUDIO -> Tuple4(
+            DangerRed,
+            Icons.Default.Warning,
+            "Suspicious Audio Detected",
+            "Potential AI Voice Clone / Deepfake"
+        )
+        CombinedSecurityOutcome.IDENTITY_NOT_CONFIRMED -> Tuple4(
+            InconclusiveGray,
+            Icons.Default.Close,
+            "Identity Not Confirmed",
+            "Speaker Voice Does Not Match Enrolled Profile"
+        )
+        CombinedSecurityOutcome.INCONCLUSIVE -> Tuple4(
+            WarningAmber,
+            Icons.Default.HelpOutline,
+            "Security Evaluation Inconclusive",
+            "Insufficient Evidence to Authorize Voice"
+        )
+        CombinedSecurityOutcome.ANALYSIS_UNAVAILABLE -> Tuple4(
+            DangerRed,
+            Icons.Default.ErrorOutline,
+            "Security Analysis Unavailable",
+            "AI Model / Verification Service Offline"
+        )
+        CombinedSecurityOutcome.AUDIO_QUALITY_FAILED -> Tuple4(
+            WarningAmber,
+            Icons.Default.GraphicEq,
+            "Audio Quality Insufficient",
+            "Acoustic Criteria Not Met"
+        )
+        CombinedSecurityOutcome.PROFILE_NOT_ENROLLED -> Tuple4(
+            AccentBlue,
+            Icons.Default.PersonAdd,
+            "Voice Profile Not Enrolled",
+            "Target Member Must Complete Enrollment"
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // --- 1. Primary Verdict Card ---
+        EchoCard(padding = 20.dp) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(badgeColor.copy(alpha = 0.15f))
+                        .border(2.dp, badgeColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = badgeIcon,
+                        contentDescription = null,
+                        tint = badgeColor,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = titleText,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = subtitleText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = badgeColor,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Detailed synthesized explanation
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(14.dp)
+                ) {
+                    Text(
+                        text = result.explanation,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 19.sp),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                // Contributing Factors
+                if (result.decisionFactors.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Decision Factors:",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        result.decisionFactors.forEach { factor ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text(
+                                    text = "• ",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = badgeColor
+                                )
+                                Text(
+                                    text = factor,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- 2. Dual Inspection Breakdown Cards ---
+        EchoCard(padding = 18.dp) {
+            Text(
+                text = "Dual-Engine Forensic Breakdown",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Sub-Panel A: Speaker Identity
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Phase 5: Speaker Recognition",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = PrimaryTeal
+                    )
+                    Text(
+                        text = result.speakerVerification?.result ?: "NOT_EVALUATED",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val sim = result.speakerVerification?.similarityScore
+                    Text(
+                        text = if (sim != null) "Similarity: ${"%.2f".format(sim)} (Threshold: ${result.speakerVerification?.matchThreshold ?: 0.72f})" else "No score generated",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Sub-Panel B: AI Anti-Spoofing
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Phase 6: AI Deepfake Detection",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = AccentBlue
+                    )
+                    Text(
+                        text = result.antiSpoofing?.resultCategory ?: "NOT_EVALUATED",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val spoofScore = result.antiSpoofing?.spoofScore
+                    Text(
+                        text = if (spoofScore != null) "Spoof Probability: ${(spoofScore * 100).toInt()}% • ${result.antiSpoofing?.scoreInterpretation ?: ""}" else "No score generated",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- 3. Acoustic Screening Card ---
+        EchoCard(padding = 16.dp) {
+            Text(
+                text = "Acoustic Screening Metrics",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Duration: ${"%.1f".format(result.audioQuality.durationSeconds)}s",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "SNR: ${result.audioQuality.snrDb.toInt()} dB",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Quality: ${result.audioQuality.statusLabel}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (result.audioQuality.isAcceptable) SuccessGreen else DangerRed
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- 4. Forensic Limitations & Disclaimers ---
+        EchoCard(padding = 16.dp) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = WarningAmber,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Forensic Safeguards & Disclaimers",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = WarningAmber
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    result.limitations.forEach { limitation ->
+                        Text(
+                            text = "• $limitation",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = result.disclaimer,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // --- 5. Action Buttons ---
+        EchoPrimaryButton(
+            text = "Verify Another Sample",
+            onClick = onVerifyAnother,
+            leadingIcon = Icons.Default.Refresh,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (result.combinedDecision in listOf(
+            CombinedSecurityOutcome.INCONCLUSIVE,
+            CombinedSecurityOutcome.AUDIO_QUALITY_FAILED,
+            CombinedSecurityOutcome.ANALYSIS_UNAVAILABLE
+        )) {
+            Spacer(modifier = Modifier.height(10.dp))
+            EchoOutlinedButton(
+                text = "Retry Analysis",
+                onClick = onRetry,
+                leadingIcon = Icons.Default.Refresh,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
 
 @Composable
 private fun CombinedResultsView(

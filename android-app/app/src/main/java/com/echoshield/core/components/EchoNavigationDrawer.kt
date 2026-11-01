@@ -1,6 +1,7 @@
 package com.echoshield.core.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,14 +22,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,9 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.echoshield.theme.CyberShieldGradient
 import com.echoshield.theme.DangerRed
-import com.echoshield.theme.PrimaryTeal
 
 data class DrawerMenuItem(
     val title: String,
@@ -56,11 +53,18 @@ data class DrawerMenuItem(
 @Composable
 fun EchoNavigationDrawerContent(
     currentRoute: String,
-    userName: String = "Sarah Henderson",
-    userEmail: String = "sarah.h@echoshield.family",
+    userName: String = "Family Guardian",
+    userEmail: String = "family@echoshield.io",
     onNavigate: (String) -> Unit,
     onLogout: () -> Unit
 ) {
+    val initials = userName.split(" ")
+        .filter { it.isNotBlank() }
+        .mapNotNull { it.firstOrNull()?.uppercase() }
+        .take(2)
+        .joinToString("")
+        .ifEmpty { "EG" }
+
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.background,
         drawerContentColor = MaterialTheme.colorScheme.onBackground,
@@ -75,7 +79,11 @@ fun EchoNavigationDrawerContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(CyberShieldGradient)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    )
                     .statusBarsPadding()
                     .padding(20.dp)
             ) {
@@ -83,16 +91,16 @@ fun EchoNavigationDrawerContent(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(46.dp)
+                                .size(44.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(PrimaryTeal.copy(alpha = 0.2f)),
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Shield,
                                 contentDescription = "EchoShield Logo",
-                                tint = PrimaryTeal,
-                                modifier = Modifier.size(28.dp)
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -103,12 +111,12 @@ fun EchoNavigationDrawerContent(
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
                                 ),
-                                color = MaterialTheme.colorScheme.onBackground
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Cyber Voice Defense v1.0",
+                                text = "Voice Biometrics & Call Defense",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = PrimaryTeal
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -121,13 +129,13 @@ fun EchoNavigationDrawerContent(
                             modifier = Modifier
                                 .size(42.dp)
                                 .clip(CircleShape)
-                                .background(PrimaryTeal),
+                                .background(MaterialTheme.colorScheme.primary),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "SH",
+                                text = initials,
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.background
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -135,7 +143,7 @@ fun EchoNavigationDrawerContent(
                             Text(
                                 text = userName,
                                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onBackground
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 text = userEmail,
@@ -151,7 +159,7 @@ fun EchoNavigationDrawerContent(
 
             // Main Drawer Links
             val menuItems = listOf(
-                DrawerMenuItem("Settings", "App preferences & security", Icons.Default.Settings, "settings"),
+                DrawerMenuItem("Settings", "App preferences, appearance & security", Icons.Default.Settings, "settings"),
                 DrawerMenuItem("Privacy & Consent", "Biometric data rights & policies", Icons.Default.Security, "privacy_settings"),
                 DrawerMenuItem("Voice Studio", "Enrollment & biometric status", Icons.Default.Mic, "voice_enrollment_intro"),
                 DrawerMenuItem("Notifications", "Alerts & suspicious call history", Icons.Default.Notifications, "notifications"),
@@ -162,13 +170,14 @@ fun EchoNavigationDrawerContent(
 
             menuItems.forEach { item ->
                 val isSelected = currentRoute == item.route
+                val primaryColor = MaterialTheme.colorScheme.primary
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
-                            if (isSelected) PrimaryTeal.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
+                            if (isSelected) primaryColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
                         )
                         .clickable { onNavigate(item.route) }
                         .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -177,7 +186,7 @@ fun EchoNavigationDrawerContent(
                     Icon(
                         imageVector = item.icon,
                         contentDescription = item.title,
-                        tint = if (isSelected) PrimaryTeal else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (isSelected) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(14.dp))
@@ -187,7 +196,7 @@ fun EchoNavigationDrawerContent(
                             style = MaterialTheme.typography.titleSmall.copy(
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             ),
-                            color = if (isSelected) PrimaryTeal else MaterialTheme.colorScheme.onBackground
+                            color = if (isSelected) primaryColor else MaterialTheme.colorScheme.onBackground
                         )
                         Text(
                             text = item.subtitle,
@@ -201,7 +210,7 @@ fun EchoNavigationDrawerContent(
             Spacer(modifier = Modifier.weight(1f))
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
             )
 
             // Logout row
@@ -231,4 +240,3 @@ fun EchoNavigationDrawerContent(
         }
     }
 }
-

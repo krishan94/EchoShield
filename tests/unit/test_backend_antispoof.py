@@ -412,3 +412,4 @@ def test_api_analyze_spoof_model_unavailable_fallback(test_user):
             assert "GPU OOM / weights missing" in data["explanation"]
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+

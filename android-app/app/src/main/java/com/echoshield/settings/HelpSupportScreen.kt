@@ -41,17 +41,32 @@ import androidx.compose.ui.unit.sp
 import com.echoshield.core.components.EchoCard
 import com.echoshield.core.components.EchoPrimaryButton
 import com.echoshield.core.components.EchoTopAppBar
-import com.echoshield.data.preview.PreviewData
-import com.echoshield.theme.AccentBlue
-import com.echoshield.theme.PrimaryTeal
+import com.echoshield.domain.model.FaqItem
 import com.echoshield.theme.WarningAmber
+
+private val officialFaqs = listOf(
+    FaqItem(
+        question = "How does EchoShield verify a caller's voice?",
+        answer = "EchoShield uses a dual-engine AI pipeline: First, SpeechBrain ECAPA-TDNN extracts a 192-dimensional mathematical embedding from the incoming speech and compares it with your family member's registered biometric profile. Simultaneously, a neural anti-spoofing model analyzes high-frequency spectral phase characteristics to detect synthetic AI generators (TTS/VC) and acoustic replay artifacts."
+    ),
+    FaqItem(
+        question = "Are my phone calls recorded?",
+        answer = "No. EchoShield never records normal cellular SIM phone calls. For encrypted in-app calls, audio chunks are analyzed ephemerally in volatile RAM and immediately discarded. EchoShield only retains encrypted mathematical vector embeddings and forensic audit logs."
+    ),
+    FaqItem(
+        question = "What if a family member has a cold or bad reception?",
+        answer = "If acoustic conditions or temporary voice changes reduce similarity below confidence thresholds without showing synthetic anomalies, EchoShield flags the call as 'Identity Not Matched' or 'Inconclusive' rather than an immediate spoof, prompting verification via a secondary family passphrase."
+    ),
+    FaqItem(
+        question = "Can I delete my biometric voice profile?",
+        answer = "Yes. You maintain complete sovereignty over your biometric data. Navigating to Settings > Privacy > Voice Data allows instantaneous cryptographic erasure of your stored embeddings from both your device and cloud storage."
+    )
+)
 
 @Composable
 fun HelpSupportScreen(
     onNavigateBack: () -> Unit
 ) {
-    val faqs = PreviewData.faqs
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -89,91 +104,15 @@ fun HelpSupportScreen(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Understanding AI Limitations",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "Acoustic deepfake detection is an advanced probabilistic countermeasure, not an absolute guarantee. Heavy acoustic distortion, severe background noise, or VoIP transcoding packet loss can lead to 'Inconclusive' assessments. Always establish a secondary out-of-band family safety passphrase for emergency financial authorizations.",
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Troubleshooting Section
-            Text(
-                text = "Troubleshooting & Calibration",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            EchoCard(padding = 16.dp) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Build,
-                        contentDescription = null,
-                        tint = AccentBlue,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Calls Failing Verification?",
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "1. Re-enroll in a quiet room with minimal echo.\n2. Hold your device at normal speaking distance.\n3. Verify that Android microphone permission is set to 'Allow all the time'.",
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // FAQs Expandable Accordion
-            Text(
-                text = "Frequently Asked Questions",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            faqs.forEach { faq ->
-                FaqAccordionItem(question = faq.question, answer = faq.answer)
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Contact Support
-            EchoCard(padding = 18.dp) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Email,
-                        contentDescription = null,
-                        tint = PrimaryTeal,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            text = "Need Assistance?",
+                            text = "Probabilistic AI Defense",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "security@echoshield.family • Response within 24h",
+                            text = "Neural models operate with statistical confidence scores. In high-risk financial situations, always perform out-of-band mutual verification.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -181,51 +120,101 @@ fun HelpSupportScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Frequently Asked Questions",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            officialFaqs.forEach { faq ->
+                FaqExpandableCard(faq = faq)
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Support Contact Card
+            EchoCard(padding = 18.dp) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Email,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Contact Support",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "For security inquiries, false positive reports, or technical support, reach out to security@echoshield.family.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 @Composable
-private fun FaqAccordionItem(
-    question: String,
-    answer: String
-) {
-    var isExpanded by remember { mutableStateOf(false) }
+private fun FaqExpandableCard(faq: FaqItem) {
+    var expanded by remember { mutableStateOf(false) }
 
     EchoCard(
-        padding = 14.dp,
-        onClick = { isExpanded = !isExpanded }
+        padding = 16.dp,
+        onClick = { expanded = !expanded }
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = question,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = null,
-                tint = PrimaryTeal,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        AnimatedVisibility(visible = isExpanded) {
-            Column {
-                Spacer(modifier = Modifier.height(8.dp))
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = answer,
-                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = faq.question,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = faq.answer,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 20.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
 }
-

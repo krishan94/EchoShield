@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,9 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.echoshield.theme.CyberTealGradient
 import com.echoshield.theme.DangerRed
-import com.echoshield.theme.PrimaryTeal
 
 @Composable
 fun EchoPrimaryButton(
@@ -44,23 +41,22 @@ fun EchoPrimaryButton(
     height: Dp = 52.dp
 ) {
     val shape = RoundedCornerShape(14.dp)
+    val bgColor = if (enabled && !isLoading) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    val contentColor = if (enabled && !isLoading) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
             .clip(shape)
-            .background(
-                brush = if (enabled && !isLoading) CyberTealGradient else androidx.compose.ui.graphics.SolidColor(
-                    MaterialTheme.colorScheme.outline
-                )
-            )
+            .background(bgColor)
             .clickable(enabled = enabled && !isLoading, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         if (isLoading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(24.dp),
-                color = Color.Black,
+                color = contentColor,
                 strokeWidth = 2.5.dp
             )
         } else {
@@ -73,7 +69,7 @@ fun EchoPrimaryButton(
                     Icon(
                         imageVector = leadingIcon,
                         contentDescription = null,
-                        tint = Color.Black,
+                        tint = contentColor,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -84,14 +80,14 @@ fun EchoPrimaryButton(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.2.sp
                     ),
-                    color = Color.Black
+                    color = contentColor
                 )
                 if (trailingIcon != null) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
                         imageVector = trailingIcon,
                         contentDescription = null,
-                        tint = Color.Black,
+                        tint = contentColor,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -129,7 +125,7 @@ fun EchoSecondaryButton(
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
-                    tint = PrimaryTeal,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -153,11 +149,12 @@ fun EchoOutlinedButton(
     height: Dp = 48.dp
 ) {
     val shape = RoundedCornerShape(12.dp)
+    val color = MaterialTheme.colorScheme.primary
     Box(
         modifier = modifier
             .height(height)
             .clip(shape)
-            .border(1.dp, PrimaryTeal, shape)
+            .border(1.dp, color, shape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center
@@ -170,7 +167,7 @@ fun EchoOutlinedButton(
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
-                    tint = PrimaryTeal,
+                    tint = color,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
@@ -178,7 +175,7 @@ fun EchoOutlinedButton(
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = PrimaryTeal
+                color = color
             )
         }
     }
@@ -200,7 +197,7 @@ fun EchoDangerButton(
             .height(height)
             .clip(shape)
             .background(DangerRed.copy(alpha = 0.12f))
-            .border(1.dp, DangerRed.copy(alpha = 0.6f), shape)
+            .border(1.dp, DangerRed.copy(alpha = 0.5f), shape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -232,7 +229,7 @@ fun EchoGhostButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    color: Color = PrimaryTeal
+    color: Color = MaterialTheme.colorScheme.primary
 ) {
     Box(
         modifier = modifier
@@ -248,4 +245,3 @@ fun EchoGhostButton(
         )
     }
 }
-

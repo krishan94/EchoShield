@@ -30,12 +30,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,40 +41,49 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.echoshield.core.components.EchoAvatar
 import com.echoshield.core.components.EchoWaveformBars
-import com.echoshield.data.preview.PreviewData
-import com.echoshield.theme.CyberShieldGradient
+import com.echoshield.domain.model.CombinedSecurityOutcome
 import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 import com.echoshield.theme.SuccessGreen
-import kotlinx.coroutines.delay
+import com.echoshield.theme.WarningAmber
 
 @Composable
 fun ActiveCallScreen(
     callId: String,
     onEndCall: () -> Unit,
-    onViewVerificationProgress: (String) -> Unit
+    onViewVerificationProgress: (String) -> Unit,
+    callingViewModel: CallingViewModel? = null
 ) {
-    val member = PreviewData.familyMembers.first()
-    var isMuted by remember { mutableStateOf(false) }
-    var isSpeakerOn by remember { mutableStateOf(true) }
-    var secondsElapsed by remember { mutableIntStateOf(14) }
+    val callingUiState = callingViewModel?.uiState?.collectAsState()
+    val memberName = callingUiState?.value?.remoteMemberName?.ifBlank { "Family Member" } ?: "Family Member"
 
-    // Live timer
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            secondsElapsed++
-        }
-    }
+    val isMuted = callingUiState?.value?.isMuted ?: false
+    val isSpeakerOn = callingUiState?.value?.isSpeakerOn ?: true
+    val secondsElapsed = callingUiState?.value?.callDurationSeconds ?: 0
+
+    val securityOutcome = callingUiState?.value?.liveSecurityOutcome
+    val headline = callingUiState?.value?.liveSecurityHeadline ?: "Phase 7 Security Shield Active"
+    val explanation = callingUiState?.value?.liveSecurityExplanation ?: "Screening remote caller audio stream..."
+    val evalCount = callingUiState?.value?.analysesCount ?: 0
 
     val minutes = secondsElapsed / 60
     val seconds = secondsElapsed % 60
     val formattedTimer = String.format("%02d:%02d", minutes, seconds)
 
+    val badgeColor = when (securityOutcome) {
+        CombinedSecurityOutcome.IDENTITY_CONFIRMED -> SuccessGreen
+        CombinedSecurityOutcome.SUSPICIOUS_AUDIO -> DangerRed
+        CombinedSecurityOutcome.IDENTITY_NOT_CONFIRMED -> DangerRed
+        CombinedSecurityOutcome.INCONCLUSIVE -> WarningAmber
+        CombinedSecurityOutcome.AUDIO_QUALITY_FAILED -> WarningAmber
+        CombinedSecurityOutcome.PROFILE_NOT_ENROLLED -> PrimaryTeal
+        else -> SuccessGreen
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(CyberShieldGradient)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -88,13 +93,13 @@ fun ActiveCallScreen(
         ) {
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Real-Time Verification Live HUD Banner (Clickable to view full progress)
+            // Real-Time Combined Security Live HUD Banner
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
-                    .border(1.dp, PrimaryTeal.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                    .border(1.dp, badgeColor.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
                     .clickable { onViewVerificationProgress(callId) }
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
@@ -103,32 +108,39 @@ fun ActiveCallScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(10.dp)
+                                .size(12.dp)
                                 .clip(CircleShape)
-                                .background(SuccessGreen)
+                                .background(badgeColor)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Acoustic Shield Active",
+                                text = headline,
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = SuccessGreen
+                                color = badgeColor,
+                                maxLines = 1
                             )
                             Text(
-                                text = "Analyzing ECAPA & Anti-Spoof Signals...",
+                                text = if (evalCount > 0) "$explanation ($evalCount evals)" else explanation,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
                             )
                         }
                     }
 
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     Icon(
                         imageVector = Icons.Default.Assessment,
                         contentDescription = "Inspect Verification",
-                        tint = PrimaryTeal,
+                        tint = badgeColor,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -138,23 +150,23 @@ fun ActiveCallScreen(
 
             // Caller Info & Avatar
             EchoAvatar(
-                name = member.name,
+                name = memberName,
                 size = 110.dp,
-                isVoiceEnrolled = member.isVoiceEnrolled
+                isVoiceEnrolled = true
             )
 
             Spacer(modifier = Modifier.height(18.dp))
 
             Text(
-                text = member.name,
+                text = memberName,
                 style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "${member.relationship} • EchoShield SRTP Voice",
+                text = "WebRTC Encrypted Peer-to-Peer Stream",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -180,7 +192,7 @@ fun ActiveCallScreen(
                     .height(40.dp),
                 contentAlignment = Alignment.Center
             ) {
-                EchoWaveformBars(barCount = 24, isAnimating = true, color = PrimaryTeal)
+                EchoWaveformBars(barCount = 24, isAnimating = true, color = badgeColor)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -201,7 +213,7 @@ fun ActiveCallScreen(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Connection: Excellent (16ms latency)",
+                    text = "WebRTC Audio: Active (Loss: 0.0%)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -220,7 +232,7 @@ fun ActiveCallScreen(
                 // Mute Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = { isMuted = !isMuted },
+                        onClick = { callingViewModel?.toggleMute() },
                         modifier = Modifier
                             .size(56.dp)
                             .clip(CircleShape)
@@ -246,7 +258,10 @@ fun ActiveCallScreen(
                 // End Call Button (Center Big Red)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = onEndCall,
+                        onClick = {
+                            callingViewModel?.endCall(reason = "User ended call")
+                            onEndCall()
+                        },
                         modifier = Modifier
                             .size(72.dp)
                             .clip(CircleShape)
@@ -262,15 +277,15 @@ fun ActiveCallScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "End Call",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.labelSmall,
                         color = DangerRed
                     )
                 }
 
-                // Speakerphone Button
+                // Speaker Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = { isSpeakerOn = !isSpeakerOn },
+                        onClick = { callingViewModel?.toggleSpeaker() },
                         modifier = Modifier
                             .size(56.dp)
                             .clip(CircleShape)
@@ -280,7 +295,7 @@ fun ActiveCallScreen(
                     ) {
                         Icon(
                             imageVector = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
-                            contentDescription = if (isSpeakerOn) "Speaker On" else "Speaker Off",
+                            contentDescription = if (isSpeakerOn) "Speaker Off" else "Speaker On",
                             tint = if (isSpeakerOn) PrimaryTeal else Color.White,
                             modifier = Modifier.size(26.dp)
                         )
@@ -294,8 +309,7 @@ fun ActiveCallScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 }
-

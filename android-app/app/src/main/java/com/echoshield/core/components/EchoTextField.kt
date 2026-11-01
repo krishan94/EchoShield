@@ -60,9 +60,10 @@ fun EchoTextField(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
+    val primaryColor = MaterialTheme.colorScheme.primary
     val borderColor = when {
         errorMessage != null -> DangerRed
-        isFocused -> PrimaryTeal
+        isFocused -> primaryColor
         else -> MaterialTheme.colorScheme.outline
     }
 
@@ -87,7 +88,7 @@ fun EchoTextField(
             textStyle = MaterialTheme.typography.bodyLarge.copy(
                 color = MaterialTheme.colorScheme.onSurface
             ),
-            cursorBrush = SolidColor(PrimaryTeal),
+            cursorBrush = SolidColor(primaryColor),
             singleLine = singleLine,
             enabled = enabled,
             keyboardOptions = keyboardOptions,

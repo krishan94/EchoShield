@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -157,9 +158,16 @@ class AudioRecordManager(private val context: Context) {
     }
 
     /**
-     * Stops audio recording and finalizes the WAV file.
+     * Stops audio recording, awaits file write completion, and finalizes the WAV file.
+     * Detaches currentOutputFile so subsequent cancelRecording() cannot delete it.
      */
-    fun stopRecording(): File? {
+    suspend fun stopRecording(): File? = withContext(Dispatchers.IO) {
+        if (!_isRecording.value && recordingJob == null) {
+            val detached = currentOutputFile
+            currentOutputFile = null
+            return@withContext if (detached != null && detached.exists() && detached.length() > 44) detached else null
+        }
+
         _isRecording.value = false
         try {
             audioRecord?.stop()
@@ -168,15 +176,36 @@ class AudioRecordManager(private val context: Context) {
             Log.e(TAG, "Error stopping AudioRecord: ${e.message}")
         } finally {
             audioRecord = null
-            recordingJob?.cancel()
+        }
+
+        // Wait for background recording job to complete WAV encoding
+        try {
+            recordingJob?.join()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error waiting for recordingJob to finish: ${e.message}")
+        } finally {
             recordingJob = null
         }
+
         _currentAmplitude.value = 0.0f
-        return currentOutputFile
+        _waveformBars.value = List(32) { 0.05f }
+
+        val finalizedFile = currentOutputFile
+        currentOutputFile = null // Detach so cancelRecording() cannot delete this completed file
+
+        if (finalizedFile != null && finalizedFile.exists() && finalizedFile.length() > 44) {
+            Log.i(TAG, "Successfully recorded WAV file: ${finalizedFile.absolutePath} (${finalizedFile.length()} bytes)")
+            finalizedFile
+        } else {
+            Log.e(TAG, "Recording finished but file missing or invalid: ${finalizedFile?.absolutePath} (len=${finalizedFile?.length()})")
+            _errorMessage.value = "Recording failed to produce a valid audio file."
+            null
+        }
     }
 
     /**
-     * Cancels recording and deletes partial files.
+     * Cancels recording and deletes in-flight partial files.
+     * If recording was already finalized, currentOutputFile is null and nothing is deleted.
      */
     fun cancelRecording() {
         _isRecording.value = false
@@ -191,7 +220,18 @@ class AudioRecordManager(private val context: Context) {
             recordingJob = null
         }
         _currentAmplitude.value = 0.0f
-        currentOutputFile?.delete()
+        _waveformBars.value = List(32) { 0.05f }
+
+        currentOutputFile?.let { file ->
+            try {
+                if (file.exists()) {
+                    file.delete()
+                    Log.i(TAG, "Deleted cancelled partial recording: ${file.absolutePath}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete cancelled recording: ${e.message}")
+            }
+        }
         currentOutputFile = null
     }
 

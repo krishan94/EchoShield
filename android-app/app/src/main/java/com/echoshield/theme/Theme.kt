@@ -11,59 +11,67 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.echoshield.core.theme.AppThemeMode
 
-private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryTeal,
-    onPrimary = Color.Black,
-    primaryContainer = PrimaryTealDark,
-    onPrimaryContainer = Color.White,
-    secondary = AccentBlue,
-    onSecondary = Color.White,
-    secondaryContainer = AccentBlueDark,
-    onSecondaryContainer = Color.White,
-    tertiary = CyberPurple,
-    onTertiary = Color.White,
+// --- MIDNIGHT TEAL DARK COLOR SCHEME ---
+private val MidnightTealDarkColorScheme = darkColorScheme(
+    primary = DarkPrimary,
+    onPrimary = DarkBackground,
+    primaryContainer = DarkSurface,
+    onPrimaryContainer = DarkSecondary,
+    secondary = DarkSecondary,
+    onSecondary = DarkBackground,
+    secondaryContainer = Color(0xFF225751),
+    onSecondaryContainer = DarkPrimaryText,
+    tertiary = DarkSecondary,
+    onTertiary = DarkBackground,
     background = DarkBackground,
-    onBackground = TextPrimaryDark,
-    surface = DarkCard,
-    onSurface = TextPrimaryDark,
+    onBackground = DarkPrimaryText,
+    surface = DarkSurface,
+    onSurface = DarkPrimaryText,
     surfaceVariant = DarkCardElevated,
-    onSurfaceVariant = TextSecondaryDark,
-    outline = DarkSurfaceStroke,
-    outlineVariant = Color(0xFF223659),
+    onSurfaceVariant = DarkSecondaryText,
+    outline = DarkBorder,
+    outlineVariant = Color(0xFF254743),
     error = DangerRed,
     onError = Color.White
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = PrimaryTealDark,
+// --- WARM IVORY LIGHT COLOR SCHEME ---
+private val WarmIvoryLightColorScheme = lightColorScheme(
+    primary = LightPrimary,
     onPrimary = Color.White,
-    primaryContainer = PrimaryTeal,
-    onPrimaryContainer = Color.Black,
-    secondary = AccentBlue,
+    primaryContainer = Color(0xFFD9ECE8),
+    onPrimaryContainer = LightPrimaryText,
+    secondary = LightSecondary,
     onSecondary = Color.White,
-    secondaryContainer = AccentBlueDark,
-    onSecondaryContainer = Color.White,
-    tertiary = CyberPurple,
+    secondaryContainer = Color(0xFFE3F3EF),
+    onSecondaryContainer = LightPrimaryText,
+    tertiary = LightSecondary,
     onTertiary = Color.White,
     background = LightBackground,
-    onBackground = TextPrimaryLight,
-    surface = LightCard,
-    onSurface = TextPrimaryLight,
+    onBackground = LightPrimaryText,
+    surface = LightSurface,
+    onSurface = LightPrimaryText,
     surfaceVariant = LightCardElevated,
-    onSurfaceVariant = TextSecondaryLight,
-    outline = LightSurfaceStroke,
-    outlineVariant = Color(0xFFCBD5E1),
+    onSurfaceVariant = LightSecondaryText,
+    outline = LightBorder,
+    outlineVariant = Color(0xFFCDD6D0),
     error = DangerRed,
     onError = Color.White
 )
 
 @Composable
 fun EchoShieldTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    darkTheme: Boolean = when (themeMode) {
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+    },
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = if (darkTheme) MidnightTealDarkColorScheme else WarmIvoryLightColorScheme
     val view = LocalView.current
 
     if (!view.isInEditMode) {
@@ -85,4 +93,3 @@ fun EchoShieldTheme(
         content = content
     )
 }
-

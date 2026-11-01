@@ -1,6 +1,7 @@
 package com.echoshield.data.remote
 
 import android.util.Log
+import com.echoshield.core.network.NetworkConfig
 import com.echoshield.domain.model.VoiceConsentRecord
 import com.echoshield.domain.model.VoiceEnrollmentResult
 import com.echoshield.domain.model.VoiceProfileInfo
@@ -30,6 +31,7 @@ interface VoiceRemoteDataSource {
 
     suspend fun verifyVoice(memberId: String, audioFile: File): com.echoshield.domain.model.VoiceVerificationResult
     suspend fun analyzeSpoof(audioFile: File, requestId: String? = null): com.echoshield.domain.model.AntiSpoofAnalysisResult
+    suspend fun analyzeSecurity(memberId: String, audioFile: File, requestId: String? = null): com.echoshield.domain.model.CombinedSecurityAnalysisResult
     suspend fun getVerificationHistory(): List<com.echoshield.domain.model.VerificationHistoryRecord>
     suspend fun clearVerificationHistory(): Int
 }
@@ -41,7 +43,7 @@ interface VoiceRemoteDataSource {
 class VoiceRemoteDataSourceImpl(
     private val authRepository: AuthRepository,
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
-    private val baseUrl: String = "http://10.0.2.2:8000"
+    private val baseUrl: String = NetworkConfig.BASE_URL
 ) : VoiceRemoteDataSource {
 
     companion object {
@@ -133,6 +135,19 @@ class VoiceRemoteDataSourceImpl(
     override suspend fun enrollVoice(samples: List<File>): VoiceEnrollmentResult = withContext(Dispatchers.IO) {
         if (samples.size < 3) {
             throw IllegalArgumentException("At least 3 audio samples required for enrollment.")
+        }
+
+        // Pre-validate all files exist, are readable, and non-empty
+        for ((idx, file) in samples.withIndex()) {
+            if (!file.exists()) {
+                throw IOException("Enrollment audio file for Sample #${idx + 1} does not exist: ${file.absolutePath}")
+            }
+            if (!file.canRead()) {
+                throw IOException("Enrollment audio file for Sample #${idx + 1} cannot be read: ${file.absolutePath}")
+            }
+            if (file.length() <= 44) {
+                throw IOException("Enrollment audio file for Sample #${idx + 1} has invalid audio data (${file.length()} bytes)")
+            }
         }
 
         val token = getAuthHeader()
@@ -475,6 +490,132 @@ class VoiceRemoteDataSourceImpl(
                 isExperimental = json.optBoolean("is_experimental", true),
                 replayDetectionSupported = json.optBoolean("replay_detection_supported", false),
                 replayLimitationNotice = json.optString("replay_limitation_notice", ""),
+                disclaimer = json.optString("disclaimer", "")
+            )
+        }
+    }
+
+    override suspend fun analyzeSecurity(
+        memberId: String,
+        audioFile: File,
+        requestId: String?
+    ): com.echoshield.domain.model.CombinedSecurityAnalysisResult = withContext(Dispatchers.IO) {
+        if (!audioFile.exists()) {
+            throw IOException("Audio file for security analysis does not exist: ${audioFile.absolutePath}")
+        }
+        if (!audioFile.canRead()) {
+            throw IOException("Audio file for security analysis cannot be read: ${audioFile.absolutePath}")
+        }
+        if (audioFile.length() <= 44) {
+            throw IOException("Audio file for security analysis is empty or invalid (${audioFile.length()} bytes)")
+        }
+
+        val token = getAuthHeader()
+            ?: throw IllegalStateException("User authentication required for combined security analysis.")
+
+        val bodyBuilder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("member_id", memberId)
+            .addFormDataPart(
+                "audio_file",
+                audioFile.name,
+                audioFile.asRequestBody(wavMediaType)
+            )
+
+        if (requestId != null) {
+            bodyBuilder.addFormDataPart("request_id", requestId)
+        }
+
+        val request = Request.Builder()
+            .url("$baseUrl/api/v1/voice/analyze-security")
+            .addHeader("Authorization", "Bearer $token")
+            .post(bodyBuilder.build())
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            val bodyString = response.body?.string() ?: "{}"
+            if (!response.isSuccessful) {
+                val err = parseErrorDetail(bodyString)
+                throw IOException(err)
+            }
+
+            val json = JSONObject(bodyString)
+
+            // Parse SpeakerVerificationSummary
+            val speakerObj = json.optJSONObject("speaker_verification")
+            val speakerSummary = if (speakerObj != null) {
+                com.echoshield.domain.model.SpeakerVerificationSummary(
+                    result = speakerObj.getString("result"),
+                    similarityScore = if (speakerObj.isNull("similarity_score")) null else speakerObj.getDouble("similarity_score").toFloat(),
+                    matchThreshold = speakerObj.optDouble("match_threshold", 0.72).toFloat(),
+                    nonMatchThreshold = speakerObj.optDouble("non_match_threshold", 0.58).toFloat(),
+                    decisionStatus = speakerObj.optString("decision_status", "unknown"),
+                    explanation = speakerObj.optString("explanation", ""),
+                    modelName = speakerObj.optString("model_name", "SpeechBrain ECAPA-TDNN"),
+                    modelVersion = speakerObj.optString("model_version", "voxceleb-v1.1")
+                )
+            } else null
+
+            // Parse AntiSpoofSummary
+            val spoofObj = json.optJSONObject("anti_spoofing")
+            val spoofSummary = if (spoofObj != null) {
+                com.echoshield.domain.model.AntiSpoofSummary(
+                    resultCategory = spoofObj.getString("result_category"),
+                    spoofScore = if (spoofObj.isNull("spoof_score")) null else spoofObj.getDouble("spoof_score").toFloat(),
+                    confidenceScore = if (spoofObj.isNull("confidence_score")) null else spoofObj.getDouble("confidence_score").toFloat(),
+                    scoreInterpretation = spoofObj.optString("score_interpretation", ""),
+                    modelName = spoofObj.optString("model_name", "mo-thecreator/Deepfake-audio-detection (Wav2Vec2)"),
+                    modelVersion = spoofObj.optString("model_version", "v1.0-hf"),
+                    replayDetectionSupported = spoofObj.optBoolean("replay_detection_supported", false),
+                    replayLimitationNotice = spoofObj.optString("replay_limitation_notice", "")
+                )
+            } else null
+
+            // Parse AcousticScreeningSummary
+            val qualityObj = json.getJSONObject("audio_quality")
+            val qualitySummary = com.echoshield.domain.model.AcousticScreeningSummary(
+                durationSeconds = qualityObj.optDouble("duration_seconds", 0.0).toFloat(),
+                sampleRate = qualityObj.optInt("sample_rate", 16000),
+                snrDb = qualityObj.optDouble("snr_db", 0.0).toFloat(),
+                rmsEnergy = qualityObj.optDouble("rms_energy", 0.0).toFloat(),
+                statusLabel = qualityObj.optString("status_label", "UNKNOWN"),
+                isAcceptable = qualityObj.optBoolean("is_acceptable", true),
+                rejectionReason = if (qualityObj.isNull("rejection_reason")) null else qualityObj.optString("rejection_reason")
+            )
+
+            // Parse Decision Factors
+            val factorsList = mutableListOf<String>()
+            val factorsArr = json.optJSONArray("decision_factors")
+            if (factorsArr != null) {
+                for (i in 0 until factorsArr.length()) {
+                    factorsList.add(factorsArr.getString(i))
+                }
+            }
+
+            // Parse Limitations
+            val limitationsList = mutableListOf<String>()
+            val limitationsArr = json.optJSONArray("limitations")
+            if (limitationsArr != null) {
+                for (i in 0 until limitationsArr.length()) {
+                    limitationsList.add(limitationsArr.getString(i))
+                }
+            }
+
+            return@withContext com.echoshield.domain.model.CombinedSecurityAnalysisResult(
+                analysisId = json.getString("analysis_id"),
+                requestId = if (json.isNull("request_id")) null else json.optString("request_id"),
+                targetMemberId = json.getString("target_member_id"),
+                targetMemberName = json.optString("target_member_name", "Family Member"),
+                combinedDecision = com.echoshield.domain.model.CombinedSecurityOutcome.fromString(json.getString("combined_decision")),
+                decisionHeadline = json.optString("decision_headline", ""),
+                explanation = json.optString("explanation", ""),
+                decisionFactors = factorsList,
+                speakerVerification = speakerSummary,
+                antiSpoofing = spoofSummary,
+                audioQuality = qualitySummary,
+                limitations = limitationsList,
+                isExperimental = json.optBoolean("is_experimental", true),
+                analyzedAt = json.optString("analyzed_at", ""),
                 disclaimer = json.optString("disclaimer", "")
             )
         }

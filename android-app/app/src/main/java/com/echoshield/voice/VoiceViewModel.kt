@@ -115,7 +115,8 @@ class VoiceViewModel(
 
     fun startRecording(context: Context) {
         val sampleIndex = _uiState.value.currentSampleIndex
-        val sampleFile = File(context.cacheDir, "echoshield_voice_sample_${sampleIndex}_${System.currentTimeMillis()}.wav")
+        val enrollmentDir = File(context.filesDir, "pending_enrollment").apply { mkdirs() }
+        val sampleFile = File(enrollmentDir, "voice_sample_${sampleIndex}_${System.currentTimeMillis()}.wav")
 
         if (audioRecordManager != null) {
             audioRecordManager.startRecording(sampleFile, viewModelScope)
@@ -123,34 +124,36 @@ class VoiceViewModel(
     }
 
     fun stopRecording(onSampleCaptured: (RecordedSample) -> Unit) {
-        val file = audioRecordManager?.stopRecording()
-        if (file == null || !file.exists()) {
-            _uiState.update { it.copy(errorMessage = "Recording failed. Please try again.") }
-            return
-        }
+        viewModelScope.launch {
+            val file = audioRecordManager?.stopRecording()
+            if (file == null || !file.exists() || file.length() <= 44) {
+                _uiState.update { it.copy(errorMessage = "Recording failed or produced empty audio. Please try again.") }
+                return@launch
+            }
 
-        // Validate audio quality immediately on client
-        val qualityReport = AudioQualityValidator.validateWavFile(file)
-        val sampleIndex = _uiState.value.currentSampleIndex
-        val prompt = samplePrompts[(sampleIndex - 1).coerceIn(0, samplePrompts.size - 1)]
+            // Validate audio quality immediately on client
+            val qualityReport = AudioQualityValidator.validateWavFile(file)
+            val sampleIndex = _uiState.value.currentSampleIndex
+            val prompt = samplePrompts[(sampleIndex - 1).coerceIn(0, samplePrompts.size - 1)]
 
-        val sample = RecordedSample(
-            sampleIndex = sampleIndex,
-            file = file,
-            prompt = prompt,
-            durationSeconds = qualityReport.durationSeconds,
-            snrDb = qualityReport.snrDb,
-            rmsEnergy = qualityReport.rmsEnergy,
-            isValid = qualityReport.isValid
-        )
-
-        _uiState.update {
-            it.copy(
-                currentReviewSample = sample,
-                errorMessage = qualityReport.errorMessage
+            val sample = RecordedSample(
+                sampleIndex = sampleIndex,
+                file = file,
+                prompt = prompt,
+                durationSeconds = qualityReport.durationSeconds,
+                snrDb = qualityReport.snrDb,
+                rmsEnergy = qualityReport.rmsEnergy,
+                isValid = qualityReport.isValid
             )
+
+            _uiState.update {
+                it.copy(
+                    currentReviewSample = sample,
+                    errorMessage = qualityReport.errorMessage
+                )
+            }
+            onSampleCaptured(sample)
         }
-        onSampleCaptured(sample)
     }
 
     fun setSampleForReview(sample: RecordedSample, error: String?) {
@@ -173,6 +176,16 @@ class VoiceViewModel(
             return
         }
 
+        // Validate that the accepted sample's audio file exists and is intact
+        if (!sample.file.exists() || !sample.file.canRead() || sample.file.length() <= 44) {
+            _uiState.update {
+                it.copy(
+                    errorMessage = "Sample #${sample.sampleIndex} audio file is missing or corrupted. Please re-record Sample #${sample.sampleIndex}."
+                )
+            }
+            return
+        }
+
         val updatedMap = _uiState.value.recordedSamples.toMutableMap()
         updatedMap[sample.sampleIndex] = sample
 
@@ -187,7 +200,32 @@ class VoiceViewModel(
             }
             onProceedToNext()
         } else {
-            // All 3 samples recorded! Submit for AI embedding extraction
+            // All samples recorded. Perform thorough pre-flight validation on ALL required samples
+            for (idx in 1.._uiState.value.totalSamples) {
+                val s = updatedMap[idx]
+                if (s == null) {
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = "Sample #$idx has not been recorded yet.",
+                            currentSampleIndex = idx,
+                            currentReviewSample = null
+                        )
+                    }
+                    return
+                }
+                if (!s.file.exists() || !s.file.canRead() || s.file.length() <= 44) {
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = "Sample #$idx audio file (${s.file.name}) is missing or corrupted. Please re-record Sample #$idx.",
+                            currentSampleIndex = idx,
+                            currentReviewSample = null
+                        )
+                    }
+                    return
+                }
+            }
+
+            // All 3 samples confirmed present and valid on disk! Submit for AI embedding extraction
             _uiState.update {
                 it.copy(
                     recordedSamples = updatedMap,
@@ -201,19 +239,81 @@ class VoiceViewModel(
 
     fun rerecordCurrentSample() {
         val sample = _uiState.value.currentReviewSample
-        sample?.file?.delete()
+        try {
+            if (sample?.file?.exists() == true) {
+                sample.file.delete()
+            }
+        } catch (_: Exception) {}
         _uiState.update { it.copy(currentReviewSample = null, errorMessage = null) }
     }
 
     fun discardCurrentSample(onDiscarded: () -> Unit) {
         val sample = _uiState.value.currentReviewSample
-        sample?.file?.delete()
+        try {
+            if (sample?.file?.exists() == true) {
+                sample.file.delete()
+            }
+        } catch (_: Exception) {}
         _uiState.update { it.copy(currentReviewSample = null, errorMessage = null) }
         onDiscarded()
     }
 
+    fun cancelEnrollment(context: Context? = null) {
+        // Delete recorded samples from active map
+        _uiState.value.recordedSamples.values.forEach { sample ->
+            try {
+                if (sample.file.exists()) {
+                    sample.file.delete()
+                }
+            } catch (_: Exception) {}
+        }
+        _uiState.value.currentReviewSample?.let { sample ->
+            try {
+                if (sample.file.exists()) {
+                    sample.file.delete()
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Clean up pending_enrollment directory if context is provided
+        context?.let { ctx ->
+            try {
+                val dir = File(ctx.filesDir, "pending_enrollment")
+                if (dir.exists()) {
+                    dir.listFiles()?.forEach { it.delete() }
+                }
+            } catch (_: Exception) {}
+        }
+
+        _uiState.update {
+            it.copy(
+                currentSampleIndex = 1,
+                recordedSamples = emptyMap(),
+                currentReviewSample = null,
+                errorMessage = null,
+                isUploading = false
+            )
+        }
+    }
+
     private fun uploadEnrollmentSamples(samples: List<RecordedSample>, onComplete: () -> Unit) {
         viewModelScope.launch {
+            // Secondary pre-flight guard before calling repository
+            for ((idx, sample) in samples.withIndex()) {
+                val file = sample.file
+                if (!file.exists() || !file.canRead() || file.length() <= 44) {
+                    _uiState.update {
+                        it.copy(
+                            isUploading = false,
+                            errorMessage = "Sample #${idx + 1} audio file (${file.name}) is invalid or missing. Please re-record.",
+                            currentSampleIndex = idx + 1,
+                            currentReviewSample = null
+                        )
+                    }
+                    return@launch
+                }
+            }
+
             val files = samples.map { it.file }
             val result = voiceRepository.enrollVoiceSamples(files)
             result.onSuccess { res ->
@@ -223,15 +323,17 @@ class VoiceViewModel(
                         currentSampleIndex = 1,
                         recordedSamples = emptyMap(),
                         currentReviewSample = null,
+                        errorMessage = null,
                         successMessage = res.message
                     )
                 }
                 onComplete()
             }.onFailure { err ->
+                // Retain recorded samples on network/server error so the user can retry without re-recording
                 _uiState.update {
                     it.copy(
                         isUploading = false,
-                        errorMessage = err.message ?: "Failed to upload and extract voice embeddings."
+                        errorMessage = err.message ?: "Failed to upload and extract voice embeddings. Please try again."
                     )
                 }
             }

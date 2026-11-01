@@ -11,6 +11,7 @@ Orchestrates end-to-end voice identity verification:
 7. Evaluates calibrated decision bands (VOICE_MATCHED, NO_MATCH, INCONCLUSIVE).
 8. Logs immutable audit trail to verification_history (no raw audio or vectors).
 9. Securely purges temporary audio buffers from memory.
+When in production mode (use_in_memory=False), operations strictly use Firestore.
 """
 
 import logging
@@ -20,8 +21,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException, status
 from firebase_admin import firestore
 
+from app.core.firebase import get_firestore_client
 from app.auth.models import AuthenticatedUser
 from app.services.speaker_recognition.audio_preprocessor import (
     audio_preprocessor,
@@ -63,7 +66,7 @@ class VerificationService:
 
     def __init__(self, use_in_memory: bool = False):
         self.use_in_memory = use_in_memory
-        # In-memory stores used for hermetic tests or when Firestore ADC is unconfigured
+        # In-memory stores used strictly for hermetic unit tests
         self._mem_history: Dict[str, Dict[str, Any]] = {}
         self._mem_relationships: Dict[str, Dict[str, Any]] = {}
         self._mem_profiles: Dict[str, Dict[str, Any]] = {}
@@ -71,14 +74,14 @@ class VerificationService:
         self._mem_users: Dict[str, Dict[str, Any]] = {}
 
     def _get_firestore(self):
+        """
+        Retrieves Firestore client in production.
+        In test mode (use_in_memory=True), returns None.
+        In production mode, raises HTTP 503 if Firestore is unreachable.
+        """
         if self.use_in_memory:
             return None
-        try:
-            return firestore.client()
-        except Exception as e:
-            logger.warning("Firestore client unavailable, falling back to in-memory store: %s", str(e))
-            self.use_in_memory = True
-            return None
+        return get_firestore_client()
 
     def _check_family_authorization(self, current_user_id: str, target_member_id: str) -> None:
         """
@@ -88,33 +91,42 @@ class VerificationService:
         if current_user_id == target_member_id:
             return  # Self-verification permitted for calibration / diagnostics
 
-        db = self._get_firestore()
-        if db:
-            try:
-                rel_ref = db.collection("family_relationships")
-                query = rel_ref.where("members", "array_contains", current_user_id).stream()
-                for doc in query:
-                    data = doc.to_dict()
-                    if target_member_id in data.get("members", []):
-                        return
-            except Exception as e:
-                logger.warning("Firestore relationship lookup warning: %s", str(e))
-
-        # Check in-memory relationships
-        for rel in self._mem_relationships.values():
-            members = rel.get("members", [])
-            if current_user_id in members and target_member_id in members:
-                return
-
-        # Also check family_service instance if available
-        try:
-            from app.family.service import family_service
-            for rel in family_service._mem_relationships.values():
+        if self.use_in_memory:
+            # Check internal memory relationships
+            for rel in self._mem_relationships.values():
                 members = rel.get("members", [])
                 if current_user_id in members and target_member_id in members:
                     return
-        except Exception:
-            pass
+
+            # Check family_service test instance if available
+            try:
+                from app.family.service import family_service
+                for rel in family_service._mem_relationships.values():
+                    members = rel.get("members", [])
+                    if current_user_id in members and target_member_id in members:
+                        return
+            except Exception:
+                pass
+
+            raise UnauthorizedAccessError(
+                f"Unauthorized: No active family circle relationship exists with member '{target_member_id}'."
+            )
+
+        # Production path: Firestore
+        db = self._get_firestore()
+        try:
+            rel_ref = db.collection("family_relationships")
+            query = rel_ref.where("members", "array_contains", current_user_id).stream()
+            for doc in query:
+                data = doc.to_dict()
+                if target_member_id in data.get("members", []):
+                    return
+        except Exception as e:
+            logger.error("Firestore relationship lookup error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to verify family relationship in Firestore: {str(e)}"
+            )
 
         raise UnauthorizedAccessError(
             f"Unauthorized: No active family circle relationship exists with member '{target_member_id}'."
@@ -124,33 +136,49 @@ class VerificationService:
         """
         Enforces active informed biometric consent for the target member.
         """
-        db = self._get_firestore()
-        if db:
-            try:
-                doc = db.collection("voice_consents").document(target_member_id).get()
-                if doc.exists:
-                    data = doc.to_dict()
-                    if data.get("consent_status") == "granted":
-                        return
-            except Exception as e:
-                logger.warning("Firestore consent lookup warning: %s", str(e))
+        if self.use_in_memory:
+            consent = self._mem_consents.get(target_member_id)
+            if consent is not None:
+                if consent.get("consent_status") == "granted":
+                    return
+                raise BiometricConsentMissingError(
+                    target_member_id,
+                    f"Biometric verification blocked: Target member '{target_member_id}' consent is {consent.get('consent_status')}."
+                )
 
-        consent = self._mem_consents.get(target_member_id)
-        if consent is not None:
-            if consent.get("consent_status") == "granted":
-                return
+            # Check voice_service test instance if available
+            try:
+                from app.enrollment.service import voice_service
+                if voice_service.check_consent(target_member_id):
+                    return
+            except Exception:
+                pass
+
             raise BiometricConsentMissingError(
                 target_member_id,
-                f"Biometric verification blocked: Target member '{target_member_id}' consent is {consent.get('consent_status')}."
+                f"Biometric verification blocked: Target member '{target_member_id}' has not granted active consent or consent was revoked."
             )
 
-        # Check voice_service instance if available
+        # Production path: Firestore
+        db = self._get_firestore()
         try:
-            from app.enrollment.service import voice_service
-            if voice_service.check_consent(target_member_id):
-                return
-        except Exception:
-            pass
+            doc = db.collection("voice_consents").document(target_member_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                if data.get("consent_status") == "granted":
+                    return
+                raise BiometricConsentMissingError(
+                    target_member_id,
+                    f"Biometric verification blocked: Target member '{target_member_id}' consent is {data.get('consent_status')}."
+                )
+        except BiometricConsentMissingError:
+            raise
+        except Exception as e:
+            logger.error("Firestore consent lookup error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to verify biometric consent in Firestore: {str(e)}"
+            )
 
         raise BiometricConsentMissingError(
             target_member_id,
@@ -161,27 +189,28 @@ class VerificationService:
         """
         Retrieves the enrolled voice profile document and decrypts its 192-dim embedding.
         """
-        db = self._get_firestore()
         profile_data: Optional[Dict[str, Any]] = None
 
-        if db:
+        if self.use_in_memory:
+            profile_data = self._mem_profiles.get(target_member_id)
+            if not profile_data:
+                try:
+                    from app.enrollment.service import voice_service
+                    profile_data = voice_service._mem_profiles.get(target_member_id)
+                except Exception:
+                    pass
+        else:
+            db = self._get_firestore()
             try:
                 doc = db.collection("voice_profiles").document(target_member_id).get()
                 if doc.exists:
                     profile_data = doc.to_dict()
             except Exception as e:
-                logger.warning("Firestore voice profile read error: %s", str(e))
-
-        if not profile_data:
-            profile_data = self._mem_profiles.get(target_member_id)
-
-        # Fallback to voice_service in-memory profiles
-        if not profile_data:
-            try:
-                from app.enrollment.service import voice_service
-                profile_data = voice_service._mem_profiles.get(target_member_id)
-            except Exception:
-                pass
+                logger.error("Firestore voice profile read error: %s", str(e))
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to retrieve voice profile from Firestore: {str(e)}"
+                )
 
         if not profile_data or not profile_data.get("is_voice_enrolled"):
             raise ProfileNotEnrolledError(target_member_id)
@@ -207,19 +236,20 @@ class VerificationService:
         if target_member_id == current_user.uid:
             return current_user.name or "Self"
 
-        db = self._get_firestore()
-        if db:
-            try:
-                doc = db.collection("users").document(target_member_id).get()
-                if doc.exists:
-                    data = doc.to_dict()
-                    return data.get("display_name") or data.get("name") or "Family Member"
-            except Exception:
-                pass
+        if self.use_in_memory:
+            user_info = self._mem_users.get(target_member_id)
+            if user_info:
+                return user_info.get("display_name") or user_info.get("name") or "Family Member"
+            return "Family Member"
 
-        user_info = self._mem_users.get(target_member_id)
-        if user_info:
-            return user_info.get("display_name") or user_info.get("name") or "Family Member"
+        db = self._get_firestore()
+        try:
+            doc = db.collection("users").document(target_member_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                return data.get("display_name") or data.get("name") or "Family Member"
+        except Exception:
+            pass
 
         return "Family Member"
 
@@ -347,7 +377,6 @@ class VerificationService:
             "member_name": member_name,
             "result": decision.category,
             "similarity_score": decision.similarity_score,
-            "match_threshold": decision.match_threshold,
             "confidence_band": decision.confidence_band,
             "audio_quality_status": quality_status,
             "duration_seconds": duration_seconds,
@@ -357,16 +386,21 @@ class VerificationService:
             "verified_at": timestamp
         }
 
-        db = self._get_firestore()
-        if db:
-            try:
-                db.collection("verification_history").document(verification_id).set(record)
-                return record
-            except Exception as e:
-                logger.warning("Firestore history log error: %s", str(e))
+        if self.use_in_memory:
+            self._mem_history[verification_id] = record
+            return record
 
-        self._mem_history[verification_id] = record
-        return record
+        # Production path: Firestore
+        db = self._get_firestore()
+        try:
+            db.collection("verification_history").document(verification_id).set(record)
+            return record
+        except Exception as e:
+            logger.error("Firestore history log error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to record verification history in Firestore: {str(e)}"
+            )
 
     def get_verification_history(
         self, current_user: AuthenticatedUser, limit: int = 50
@@ -374,63 +408,72 @@ class VerificationService:
         """
         Returns verification history logs belonging to the requesting user.
         """
+        if self.use_in_memory:
+            user_records = [
+                rec for rec in self._mem_history.values()
+                if rec.get("user_id") == current_user.uid
+            ]
+            user_records.sort(key=lambda r: r.get("verified_at", ""), reverse=True)
+            return user_records[:limit]
+
+        # Production path: Firestore
         db = self._get_firestore()
-        records: List[Dict[str, Any]] = []
-
-        if db:
-            try:
-                query = (
-                    db.collection("verification_history")
-                    .where("user_id", "==", current_user.uid)
-                    .order_by("verified_at", direction=firestore.Query.DESCENDING)
-                    .limit(limit)
-                    .stream()
-                )
-                for doc in query:
-                    records.append(doc.to_dict())
-                return records
-            except Exception as e:
-                logger.warning("Firestore query history error: %s", str(e))
-
-        # In-memory query
-        user_records = [
-            rec for rec in self._mem_history.values()
-            if rec.get("user_id") == current_user.uid
-        ]
-        user_records.sort(key=lambda r: r.get("verified_at", ""), reverse=True)
-        return user_records[:limit]
+        try:
+            query = (
+                db.collection("verification_history")
+                .where("user_id", "==", current_user.uid)
+                .order_by("verified_at", direction=firestore.Query.DESCENDING)
+                .limit(limit)
+                .stream()
+            )
+            records = []
+            for doc in query:
+                records.append(doc.to_dict())
+            return records
+        except Exception as e:
+            logger.error("Firestore query history error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to query verification history from Firestore: {str(e)}"
+            )
 
     def clear_verification_history(self, current_user: AuthenticatedUser) -> int:
         """
         Purges all verification history entries for the requesting user.
         """
+        if self.use_in_memory:
+            count = 0
+            to_delete = [
+                k for k, v in self._mem_history.items()
+                if v.get("user_id") == current_user.uid
+            ]
+            for k in to_delete:
+                del self._mem_history[k]
+                count += 1
+            return count
+
+        # Production path: Firestore
         db = self._get_firestore()
         count = 0
-
-        if db:
-            try:
-                query = (
-                    db.collection("verification_history")
-                    .where("user_id", "==", current_user.uid)
-                    .stream()
-                )
-                batch = db.batch()
-                for doc in query:
-                    batch.delete(doc.reference)
-                    count += 1
+        try:
+            query = (
+                db.collection("verification_history")
+                .where("user_id", "==", current_user.uid)
+                .stream()
+            )
+            batch = db.batch()
+            for doc in query:
+                batch.delete(doc.reference)
+                count += 1
+            if count > 0:
                 batch.commit()
-                return count
-            except Exception as e:
-                logger.warning("Firestore clear history error: %s", str(e))
-
-        to_delete = [
-            k for k, v in self._mem_history.items()
-            if v.get("user_id") == current_user.uid
-        ]
-        for k in to_delete:
-            del self._mem_history[k]
-            count += 1
-        return count
+            return count
+        except Exception as e:
+            logger.error("Firestore clear history error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to clear verification history from Firestore: {str(e)}"
+            )
 
 
 # Global instance

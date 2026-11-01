@@ -1,5 +1,6 @@
 package com.echoshield.calling
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -25,18 +26,19 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.echoshield.core.components.EchoAvatar
 import com.echoshield.core.components.EchoPulseRadar
-import com.echoshield.data.preview.PreviewData
-import com.echoshield.theme.CyberShieldGradient
+import com.echoshield.family.FamilyViewModel
 import com.echoshield.theme.DangerRed
 import com.echoshield.theme.PrimaryTeal
 import com.echoshield.theme.SuccessGreen
@@ -46,14 +48,24 @@ import com.echoshield.theme.WarningAmber
 fun IncomingCallScreen(
     callerId: String,
     onAcceptCall: () -> Unit,
-    onRejectCall: () -> Unit
+    onRejectCall: () -> Unit,
+    callingViewModel: CallingViewModel? = null,
+    familyViewModel: FamilyViewModel? = null
 ) {
-    val member = PreviewData.familyMembers.find { it.id == callerId } ?: PreviewData.familyMembers.first()
+    val context = LocalContext.current
+    val familyUiState = familyViewModel?.uiState?.collectAsState()
+    val member = familyUiState?.value?.members?.find { it.id == callerId || it.memberId == callerId }
+
+    val callingUiState = callingViewModel?.uiState?.collectAsState()
+    val callerName = callingUiState?.value?.remoteMemberName?.ifBlank { null }
+        ?: member?.name
+        ?: "Incoming Caller"
+    val relationship = member?.relationship ?: "Family Member"
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(CyberShieldGradient)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -80,76 +92,71 @@ fun IncomingCallScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "ENCRYPTED INCOMING CALL",
-                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
-                        color = PrimaryTeal
+                        text = "Encrypted Family Calling",
+                        fontSize = 12.sp,
+                        color = PrimaryTeal,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(36.dp))
 
-            // Caller Avatar with Pulse Animation
+            // Radar Pulse around Avatar
             Box(
-                modifier = Modifier.size(170.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(240.dp)
             ) {
-                EchoPulseRadar(size = 170.dp, color = PrimaryTeal)
+                EchoPulseRadar(
+                    color = SuccessGreen,
+                    size = 220.dp
+                )
+
                 EchoAvatar(
-                    name = member.name,
-                    size = 110.dp,
-                    isVoiceEnrolled = member.isVoiceEnrolled
+                    name = callerName,
+                    size = 110.dp
                 )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = member.name,
-                style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.White
+                text = callerName,
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "${member.relationship} • Calling via WebRTC",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = relationship,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Mandatory Security Warning: NEVER claim verified identity before verification!
+            // Live Defense Status Indicator
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-                    .border(1.dp, WarningAmber.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
-                    .padding(14.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Row(verticalAlignment = Alignment.Top) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = null,
-                        tint = WarningAmber,
-                        modifier = Modifier.size(20.dp)
+                        tint = SuccessGreen,
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Identity Pending Verification",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = WarningAmber
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Caller identity is NOT yet verified. Upon answering, real-time speech similarity and anti-spoofing analysis will activate immediately.",
-                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 16.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Real-Time AI Verification Ready",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
 
@@ -159,14 +166,17 @@ fun IncomingCallScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Reject Button
+                // Reject Call Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = onRejectCall,
+                        onClick = {
+                            callingViewModel?.rejectIncomingCall()
+                            onRejectCall()
+                        },
                         modifier = Modifier
                             .size(72.dp)
                             .clip(CircleShape)
@@ -174,23 +184,27 @@ fun IncomingCallScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.CallEnd,
-                            contentDescription = "Reject Call",
+                            contentDescription = "Decline Call",
                             tint = Color.White,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(36.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Decline",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = DangerRed
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
 
-                // Accept Button
+                // Accept Call Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = onAcceptCall,
+                        onClick = {
+                            callingViewModel?.acceptIncomingCall(context)
+                            onAcceptCall()
+                        },
                         modifier = Modifier
                             .size(72.dp)
                             .clip(CircleShape)
@@ -200,20 +214,20 @@ fun IncomingCallScreen(
                             imageVector = Icons.Default.Call,
                             contentDescription = "Accept Call",
                             tint = Color.White,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(36.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Accept & Verify",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = SuccessGreen
+                        text = "Accept",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
-

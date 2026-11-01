@@ -1,6 +1,7 @@
 package com.echoshield.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -9,7 +10,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
+import com.echoshield.domain.model.CallStatus
 import com.echoshield.authentication.AuthViewModel
 import com.echoshield.authentication.EmailVerificationScreen
 import com.echoshield.authentication.ForgotPasswordScreen
@@ -19,6 +22,7 @@ import com.echoshield.authentication.SignupScreen
 import com.echoshield.authentication.SplashScreen
 import com.echoshield.calling.ActiveCallScreen
 import com.echoshield.calling.CallingContactsScreen
+import com.echoshield.calling.CallingViewModel
 import com.echoshield.calling.IncomingCallScreen
 import com.echoshield.calling.OutgoingCallScreen
 import com.echoshield.core.components.StateShowcaseScreen
@@ -55,8 +59,46 @@ fun EchoNavGraph(
     authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory),
     familyViewModel: FamilyViewModel = viewModel(factory = FamilyViewModel.Factory),
     voiceViewModel: com.echoshield.voice.VoiceViewModel = viewModel(factory = com.echoshield.voice.VoiceViewModel.Factory),
-    voiceVerificationViewModel: VoiceVerificationViewModel = viewModel()
+    voiceVerificationViewModel: VoiceVerificationViewModel = viewModel(),
+    callingViewModel: CallingViewModel = viewModel(factory = CallingViewModel.Factory)
 ) {
+    val callingUiState by callingViewModel.uiState.collectAsState()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
+    // Reactively transition calling screens when call status changes in foreground
+    LaunchedEffect(callingUiState.callStatus) {
+        when (callingUiState.callStatus) {
+            CallStatus.RINGING -> {
+                val callerId = callingUiState.remoteMemberId ?: "mem_001"
+                if (currentRoute?.startsWith("incoming_call") != true &&
+                    currentRoute?.startsWith("active_call") != true
+                ) {
+                    navController.navigate(Screen.IncomingCall.createRoute(callerId))
+                }
+            }
+            CallStatus.CONNECTED -> {
+                val callId = callingUiState.callId ?: "call_active"
+                if (currentRoute?.startsWith("incoming_call") == true ||
+                    currentRoute?.startsWith("outgoing_call") == true
+                ) {
+                    navController.navigate(Screen.ActiveCall.createRoute(callId)) {
+                        popUpTo(Screen.IncomingCall.route) { inclusive = true }
+                    }
+                }
+            }
+            CallStatus.ENDED -> {
+                val callId = callingUiState.callId ?: "call_active"
+                if (currentRoute?.startsWith("active_call") == true) {
+                    navController.navigate(Screen.ReportDetails.createRoute(callId)) {
+                        popUpTo(Screen.ActiveCall.route) { inclusive = true }
+                    }
+                }
+            }
+            else -> {}
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.Splash.route,
@@ -158,7 +200,12 @@ fun EchoNavGraph(
                 onAddFamilyMember = { navController.navigate(Screen.AddFamilyMember.route) },
                 onRegisterVoice = { navController.navigate(Screen.VoiceEnrollmentIntro.route) },
                 onViewReports = { navController.navigate(Screen.CallHistory.route) },
-                onViewCallDetail = { callId -> navController.navigate(Screen.ReportDetails.createRoute(callId)) }
+                onViewCallDetail = { callId -> navController.navigate(Screen.ReportDetails.createRoute(callId)) },
+                onViewInvitations = { navController.navigate(Screen.Invitations.route) },
+                authViewModel = authViewModel,
+                familyViewModel = familyViewModel,
+                voiceViewModel = voiceViewModel,
+                callingViewModel = callingViewModel
             )
         }
 
@@ -279,7 +326,9 @@ fun EchoNavGraph(
             CallingContactsScreen(
                 onOpenDrawer = onOpenDrawer,
                 onStartOutgoingCall = { contactId -> navController.navigate(Screen.OutgoingCall.createRoute(contactId)) },
-                onSimulateIncomingCall = { contactId -> navController.navigate(Screen.IncomingCall.createRoute(contactId)) }
+                onSimulateIncomingCall = { contactId -> navController.navigate(Screen.IncomingCall.createRoute(contactId)) },
+                onAddFamilyMember = { navController.navigate(Screen.AddFamilyMember.route) },
+                familyViewModel = familyViewModel
             )
         }
 
@@ -291,8 +340,15 @@ fun EchoNavGraph(
             val callerId = backStackEntry.arguments?.getString("callerId") ?: "mem_001"
             IncomingCallScreen(
                 callerId = callerId,
-                onAcceptCall = { navController.navigate(Screen.ActiveCall.createRoute("call_9822")) },
-                onRejectCall = { navController.popBackStack() }
+                onAcceptCall = {
+                    val activeId = callingViewModel.uiState.value.callId ?: "call_active"
+                    navController.navigate(Screen.ActiveCall.createRoute(activeId)) {
+                        popUpTo(Screen.IncomingCall.route) { inclusive = true }
+                    }
+                },
+                onRejectCall = { navController.popBackStack() },
+                callingViewModel = callingViewModel,
+                familyViewModel = familyViewModel
             )
         }
 
@@ -304,8 +360,15 @@ fun EchoNavGraph(
             val contactId = backStackEntry.arguments?.getString("contactId") ?: "mem_001"
             OutgoingCallScreen(
                 contactId = contactId,
-                onCallConnected = { navController.navigate(Screen.ActiveCall.createRoute("call_9822")) },
-                onCancelCall = { navController.popBackStack() }
+                onCallConnected = {
+                    val activeId = callingViewModel.uiState.value.callId ?: "call_active"
+                    navController.navigate(Screen.ActiveCall.createRoute(activeId)) {
+                        popUpTo(Screen.OutgoingCall.route) { inclusive = true }
+                    }
+                },
+                onCancelCall = { navController.popBackStack() },
+                callingViewModel = callingViewModel,
+                familyViewModel = familyViewModel
             )
         }
 
@@ -314,11 +377,16 @@ fun EchoNavGraph(
             route = Screen.ActiveCall.route,
             arguments = listOf(navArgument("callId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val callId = backStackEntry.arguments?.getString("callId") ?: "call_9822"
+            val callId = backStackEntry.arguments?.getString("callId") ?: "call_active"
             ActiveCallScreen(
                 callId = callId,
-                onEndCall = { navController.navigate(Screen.VerificationResults.createRoute(callId)) },
-                onViewVerificationProgress = { id -> navController.navigate(Screen.VerificationProgress.createRoute(id)) }
+                onEndCall = {
+                    navController.navigate(Screen.ReportDetails.createRoute(callId)) {
+                        popUpTo(Screen.ActiveCall.route) { inclusive = true }
+                    }
+                },
+                onViewVerificationProgress = { id -> navController.navigate(Screen.ReportDetails.createRoute(id)) },
+                callingViewModel = callingViewModel
             )
         }
 
@@ -385,7 +453,8 @@ fun EchoNavGraph(
             CallHistoryScreen(
                 onOpenDrawer = onOpenDrawer,
                 onViewReportDetails = { callId -> navController.navigate(Screen.ReportDetails.createRoute(callId)) },
-                onViewVerificationAudit = { navController.navigate(Screen.VerificationHistory.route) }
+                onViewVerificationAudit = { navController.navigate(Screen.VerificationHistory.route) },
+                callingViewModel = callingViewModel
             )
         }
 
@@ -397,7 +466,8 @@ fun EchoNavGraph(
             val callId = backStackEntry.arguments?.getString("callId") ?: "call_9820"
             ReportDetailsScreen(
                 callId = callId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                callingViewModel = callingViewModel
             )
         }
 

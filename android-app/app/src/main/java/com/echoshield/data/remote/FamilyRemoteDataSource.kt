@@ -1,5 +1,6 @@
 package com.echoshield.data.remote
 
+import com.echoshield.core.network.NetworkConfig
 import com.echoshield.domain.model.FamilyInvitation
 import com.echoshield.domain.model.FamilyMember
 import com.echoshield.domain.model.UserSearchInfo
@@ -37,7 +38,7 @@ interface FamilyRemoteDataSource {
 class FamilyRemoteDataSourceImpl(
     private val authRepository: AuthRepository,
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
-    private val baseUrl: String = "http://10.0.2.2:8000"
+    private val baseUrl: String = NetworkConfig.BASE_URL
 ) : FamilyRemoteDataSource {
 
     private val httpClient = OkHttpClient.Builder()

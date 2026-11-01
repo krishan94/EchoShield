@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 
+      Safe local network testing configuration for Debug builds ONLY.
+      Explicitly restricts cleartext HTTP traffic to local development addresses:
+      - 172.20.10.3 (Physical laptop LAN IP on local Wi-Fi / Hotspot)
+      - 10.0.2.2 (Android Emulator host loopback)
+      - localhost and 127.0.0.1
+      This file is located in src/debug and is NEVER bundled in Release builds.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">172.20.10.3</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
+

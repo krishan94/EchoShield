@@ -2,6 +2,7 @@ package com.echoshield.data.repository
 
 import com.echoshield.data.remote.VoiceRemoteDataSource
 import com.echoshield.domain.model.AntiSpoofAnalysisResult
+import com.echoshield.domain.model.CombinedSecurityAnalysisResult
 import com.echoshield.domain.model.VoiceConsentRecord
 import com.echoshield.domain.model.VoiceEnrollmentResult
 import com.echoshield.domain.model.VoiceProfileInfo
@@ -34,17 +35,37 @@ class VoiceRepositoryImpl(
     }
 
     override suspend fun enrollVoiceSamples(sampleFiles: List<File>): Result<VoiceEnrollmentResult> {
+        if (sampleFiles.size < 3) {
+            return Result.failure(IllegalArgumentException("At least 3 audio samples are required for voice enrollment."))
+        }
+
+        // Pre-validate all files exist, are readable, and non-empty before initiating upload
+        for ((index, file) in sampleFiles.withIndex()) {
+            if (!file.exists()) {
+                return Result.failure(java.io.FileNotFoundException("Sample #${index + 1} file not found: ${file.name}"))
+            }
+            if (!file.canRead()) {
+                return Result.failure(java.io.IOException("Sample #${index + 1} file cannot be read: ${file.name}"))
+            }
+            if (file.length() <= 44) {
+                return Result.failure(java.io.IOException("Sample #${index + 1} file has invalid or empty audio data (${file.length()} bytes)"))
+            }
+        }
+
         return try {
             val result = remoteDataSource.enrollVoice(sampleFiles)
             refreshVoiceProfile()
-            // Clean up temporary local files after successful upload and processing
+            // Clean up temporary local files ONLY after successful upload and server processing
             for (file in sampleFiles) {
                 try {
-                    file.delete()
+                    if (file.exists()) {
+                        file.delete()
+                    }
                 } catch (_: Exception) {}
             }
             Result.success(result)
         } catch (e: Exception) {
+            // Crucial: preserve local audio files on network/server error so user can retry
             Result.failure(e)
         }
     }
@@ -89,6 +110,19 @@ class VoiceRepositoryImpl(
     ): Result<AntiSpoofAnalysisResult> {
         return try {
             val result = remoteDataSource.analyzeSpoof(audioFile, requestId)
+            Result.success(result)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun analyzeSecurity(
+        memberId: String,
+        audioFile: File,
+        requestId: String?
+    ): Result<CombinedSecurityAnalysisResult> {
+        return try {
+            val result = remoteDataSource.analyzeSecurity(memberId, audioFile, requestId)
             Result.success(result)
         } catch (e: Exception) {
             Result.failure(e)
