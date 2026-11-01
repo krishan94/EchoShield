@@ -89,9 +89,4 @@ d:\EchoShield\
 
 ---
 
-## Status & Roadmap
-
-EchoShield is being implemented phase-by-phase with verification tests at each milestone.
-- **Current Phase**: **Phase 00 – Project Initialization (COMPLETED)**
-- **Next Phase**: **Phase 01 – Core Architecture & Base Configuration**
 
